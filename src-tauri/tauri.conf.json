@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ElyHub",
+  "version": "0.1.0",
+  "identifier": "app.ely.hub",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": null
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "ElyHub",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1100,
+        "minHeight": 720,
+        "center": true,
+        "resizable": true,
+        "transparent": false,
+        "decorations": true,
+        "fullscreen": false,
+        "focus": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "backgroundColor": "#05060A"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "copyright": "ElyHub",
+    "category": "SocialNetworking",
+    "shortDescription": "ElyHub — the Ely community home",
+    "longDescription": "Leaderboards, rewards, trophies, and daily claims for the Ely Discord community."
+  }
+}
