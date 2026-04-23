@@ -1,5 +1,13 @@
 name: Release build
 
+# Triggered by pushing a `v*` tag. Builds the hardened production frontend
+# (transpiled + minified by build.mjs, no babel-standalone at runtime),
+# then wraps it in a native Tauri bundle for every supported platform and
+# attaches the artifacts to a GitHub Release.
+#
+# The tag name is used verbatim as the release name — e.g. push `v0.2.0`
+# and you get a Release titled "ElyHub v0.2.0".
+
 on:
   push:
     tags:
@@ -7,7 +15,23 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Gate the release on the same test suite CI runs. If tests are red on
+  # the tagged commit, no release artifacts are built — cheaper to fail
+  # here than ship a broken binary to every platform.
+  test:
+    name: Pre-release tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
   build:
+    needs: test
     strategy:
       fail-fast: false
       matrix:
@@ -21,6 +45,12 @@ jobs:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             label: Windows x64
+          # Ubuntu 22.04 specifically — Tauri's Linux bundler needs
+          # webkit2gtk-4.1 which ships in 22.04's repos. 24.04 works too
+          # but is newer than most distros users actually run.
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            label: Linux x64
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -35,19 +65,53 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+          # Include the target triple so the cache keys don't collide
+          # between Apple Silicon and Intel on the same macos-latest runner.
+          key: ${{ matrix.target }}
+
+      # Tauri's Linux bundler links webkit2gtk + friends. Without these the
+      # build fails deep in cargo build with pkg-config errors.
+      - name: Install Tauri system deps (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            pkg-config \
+            build-essential
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Install frontend deps
         run: npm ci
+
+      # Hand-roll the prod frontend build first so any build.mjs failure
+      # fails loudly BEFORE tauri-action kicks off the long Rust compile.
+      # tauri-action also triggers beforeBuildCommand, but running it here
+      # means we see the actual build output in the step log.
+      - name: Build production frontend
+        run: npm run build:frontend
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # TODO: set these once we have signing infrastructure.
+          #   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_SIGNING_IDENTITY
+          #   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID        (notarization)
+          #   WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD
+          #   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD  (updater)
+          # Without them the app is unsigned — macOS Gatekeeper flags it as
+          # "unidentified developer" and Windows SmartScreen shows a warning.
+          # Users can still run it, but the UX is rough.
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'ElyHub ${{ github.ref_name }}'
@@ -58,6 +122,14 @@ jobs:
             - **macOS (Apple Silicon)**: `.dmg` with `aarch64` in the name
             - **macOS (Intel)**: `.dmg` with `x64` in the name
             - **Windows**: `.msi` or `.exe`
+            - **Linux**: `.AppImage` (universal) or `.deb` (Debian/Ubuntu)
+
+            See [CHANGELOG.md](./CHANGELOG.md) for what changed.
           releaseDraft: false
           prerelease: false
-          args: --target ${{ matrix.target }}
+          # --config points tauri at the prod overlay which sets
+          # frontendDist=../dist-prod + triggers `npm run build:frontend`
+          # via beforeBuildCommand. Without this the release bundle ships
+          # the raw .jsx + babel-standalone runtime, which defeats the
+          # whole prod pipeline.
+          args: --target ${{ matrix.target }} --config src-tauri/tauri.conf.prod.json
