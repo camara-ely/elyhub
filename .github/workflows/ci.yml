@@ -1,0 +1,92 @@
+name: CI
+
+# Runs on every push to main and every PR. Cheap + fast by design: frontend
+# tests + prod build smoke + a Rust cargo check on a single Linux runner.
+# The heavier cross-platform bundle build lives in release.yml and only
+# fires on version tags, so this stays under a minute for the common case.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref — no point finishing CI for a commit
+# that's already been replaced by a newer push on the same branch/PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (tests + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build frontend (prod)
+        run: npm run build:frontend
+
+      - name: Upload dist-prod (for debugging failures)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-prod-${{ github.run_id }}
+          path: dist-prod/
+          retention-days: 7
+
+  rust:
+    name: Rust (cargo check)
+    runs-on: ubuntu-latest
+    # Rust job is split so the faster frontend job can report green quickly
+    # even if cargo is still warming up.
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri on Linux needs these system libs even for `cargo check`. Without
+      # them the build fails looking for webkit2gtk / libsoup / libayatana etc.
+      - name: Install Tauri system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            pkg-config \
+            build-essential
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: cargo fmt --check
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --all-targets --all-features
