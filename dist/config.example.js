@@ -1,5 +1,11 @@
 // ElyHub local config — copy to config.js and fill in real values.
 // config.js is gitignored so your token never lands in git.
+//
+// ⚠️ SECURITY: config.js is bundled into the shipped app at build time.
+// Anyone who installs ElyHub can extract the Turso token from the binary.
+// For production the tursoToken MUST be a read-only token with row-level
+// rules that prevent spoofing, OR the frontend should talk to a backend
+// proxy instead of Turso directly. See the "Backend real" roadmap item.
 window.ELYHUB_CONFIG = {
   tursoUrl: 'libsql://YOUR-DB-NAME.turso.io',
   tursoToken: 'eyJ...',
