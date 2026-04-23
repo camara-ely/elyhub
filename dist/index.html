@@ -24,9 +24,39 @@
   ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
   ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
+  /* Accessibility — visible keyboard focus.
+     We suppress the default browser outline only for pointer-driven focus
+     (via :focus:not(:focus-visible)) and keep a crisp ring for keyboard
+     navigation. The ring is offset so it reads clearly over glass panels. */
+  :focus { outline: none; }
+  :focus-visible {
+    outline: 2px solid rgba(61,123,255,0.9);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  /* Screen-reader-only utility for skip links and visually-hidden labels. */
+  .sr-only {
+    position: absolute !important;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0);
+    white-space: nowrap; border: 0;
+  }
+  .skip-link {
+    position: absolute; top: -40px; left: 12px;
+    padding: 8px 14px; border-radius: 8px;
+    background: #3d7bff; color: #fff;
+    font-weight: 600; font-size: 13px;
+    text-decoration: none; z-index: 100000;
+    transition: top .15s ease;
+  }
+  .skip-link:focus { top: 12px; }
+
   @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
   @keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.96) } to { opacity: 1; transform: translateY(0) scale(1) } }
   @keyframes slideInR { from { opacity: 0; transform: translateX(30px) } to { opacity: 1; transform: translateX(0) } }
+  @keyframes cardRise { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: translateY(0) } }
+  @keyframes btnSpin { to { transform: rotate(360deg) } }
   @keyframes orb1 {
     0%, 100% { transform: translate(0, 0) scale(1) }
     33% { transform: translate(8vw, 10vh) scale(1.1) }
@@ -39,6 +69,15 @@
   @keyframes orb3 {
     0%, 100% { transform: translate(-50%, -50%) scale(1) }
     50% { transform: translate(-40%, -60%) scale(1.15) }
+  }
+  @keyframes focusPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(61,123,255,0.55), inset 0 1px 0 rgba(255,255,255,0.14), 0 10px 40px rgba(0,0,0,0.35); }
+    50%  { box-shadow: 0 0 0 8px rgba(61,123,255,0.00), 0 0 32px rgba(61,123,255,0.55), inset 0 1px 0 rgba(255,255,255,0.2), 0 10px 40px rgba(0,0,0,0.35); }
+    100% { box-shadow: 0 0 0 0 rgba(61,123,255,0.00), inset 0 1px 0 rgba(255,255,255,0.14), 0 10px 40px rgba(0,0,0,0.35); }
+  }
+  .focus-pulse {
+    animation: focusPulse 2.2s ease-out;
+    border-color: rgba(61,123,255,0.6) !important;
   }
 
   /* Responsive */
@@ -55,6 +94,16 @@
   window.TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
     "theme": "blue"
   }/*EDITMODE-END*/;
+
+  // Tauri's WKWebView on tauri:// URLs doesn't auto-reload on ⌘R like a
+  // browser does, and the app has no native menu bar. Intercept here so
+  // ⌘R (and Ctrl+R on Linux/Win) reload the page during dev.
+  window.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'r' || e.key === 'R')) {
+      e.preventDefault();
+      location.reload();
+    }
+  });
 </script>
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
@@ -62,8 +111,23 @@
 </head>
 <body>
 <div id="root"></div>
+<script src="config.js"></script>
 <script type="text/babel" src="tokens.jsx"></script>
+<script type="text/babel" src="i18n.jsx"></script>
+<script type="text/babel" src="notify.jsx"></script>
+<script type="text/babel" src="auth.jsx"></script>
+<script type="text/babel" src="data.jsx"></script>
 <script type="text/babel" src="ui.jsx"></script>
+<script type="text/babel" src="theme.jsx"></script>
+<script type="text/babel" src="shell.jsx"></script>
+<script type="text/babel" src="state.jsx"></script>
+<script type="text/babel" src="modals.jsx"></script>
+<script type="text/babel" src="marketplace.jsx"></script>
+<script type="text/babel" src="home.jsx"></script>
+<script type="text/babel" src="profile.jsx"></script>
+<script type="text/babel" src="publishing.jsx"></script>
+<script type="text/babel" src="views.jsx"></script>
+<script type="text/babel" src="intro.jsx"></script>
 <script type="text/babel" src="app.jsx"></script>
 </body>
 </html>
