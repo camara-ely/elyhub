@@ -29,7 +29,7 @@ name = "elyhub-api-prod"
 [env.production.vars]
 ENVIRONMENT = "prod"
 DISCORD_CLIENT_ID = "1495648026037977188"
-DISCORD_REDIRECT_URI = "https://elyhub-api-prod.YOUR-SUBDOMAIN.workers.dev/auth/discord/callback"
+DISCORD_REDIRECT_URI = "https://elyhub-api-prod.riseytg1.workers.dev/auth/discord/callback"
 TURSO_URL = "libsql://elyhub-camara-ely.aws-us-east-1.turso.io"
 R2_ACCOUNT_ID = "4f6588cf30461f62ca4b381c99547570"
 R2_BUCKET = "elyhub-assets"
