@@ -6,7 +6,7 @@
 
 import { Hono } from 'hono';
 import type { AppContext, Env, PublicUser } from '../types';
-import { requireAuth, userId, avatarUrl } from '../auth';
+import { requireAuth, userId, avatarUrl, getLiveBalance } from '../auth';
 import { db, exec, now, queryAll, queryOne } from '../db';
 
 export const meRoutes = new Hono<{ Bindings: Env }>();
@@ -20,21 +20,24 @@ meRoutes.get('/', async (c: AppContext) => {
 
   const row = await queryOne<{
     id: string; username: string; global_name: string | null;
-    avatar_hash: string | null; aura: number; level: number;
+    avatar_hash: string | null;
   }>(
     client,
-    'SELECT id, username, global_name, avatar_hash, aura, level FROM users WHERE id = ?',
+    'SELECT id, username, global_name, avatar_hash FROM users WHERE id = ?',
     [uid],
   );
   if (!row) return c.json({ error: 'user_not_found' }, 404);
 
+  // Aura/level come live from the bot's xp table minus marketplace spend
+  // — the users.aura/level columns are legacy placeholders.
+  const { aura, level } = await getLiveBalance(client, uid);
   const user: PublicUser = {
     id: row.id,
     username: row.username,
     global_name: row.global_name,
     avatar_url: avatarUrl(row.id, row.avatar_hash),
-    aura: row.aura,
-    level: row.level,
+    aura,
+    level,
   };
   return c.json(user);
 });

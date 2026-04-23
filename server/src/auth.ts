@@ -15,7 +15,40 @@
 import jwt from '@tsndr/cloudflare-worker-jwt';
 import type { Context, Next } from 'hono';
 import type { AppContext, Env, PublicUser, Session } from './types';
+import type { Client } from '@libsql/client/web';
 import { db, exec, now, queryOne } from './db';
+
+// ─── Live aura/level ──────────────────────────────────────────────────
+// The Discord bot owns the `xp` table — voice minutes, messages, boosts,
+// etc. That's the authoritative source for how much aura a user has
+// earned. Marketplace purchases debit by INSERTing into `purchases`;
+// we compute the live balance as (xp.xp - SUM(purchases.aura_amount)).
+//
+// Pros:
+//   - Zero writes back to xp — no race with the bot's XP ticker.
+//   - users.aura / users.level columns become display-only caches; we
+//     never trust them for reads.
+//   - One SELECT gives us the whole picture.
+// Cons:
+//   - Concurrent double-buys inside the same millisecond could both
+//     pass the `aura >= price` check. Window is tiny; revisit if it
+//     bites in practice (a row-level lock on xp would fix it).
+export async function getLiveBalance(
+  client: Client, userId: string,
+): Promise<{ aura: number; level: number }> {
+  const row = await queryOne<{ xp: number | null; xp_level: number | null; spent: number | null }>(
+    client,
+    `SELECT
+       (SELECT xp    FROM xp WHERE user_id = ?) AS xp,
+       (SELECT level FROM xp WHERE user_id = ?) AS xp_level,
+       COALESCE((SELECT SUM(aura_amount) FROM purchases WHERE user_id = ?), 0) AS spent`,
+    [userId, userId, userId],
+  );
+  const earned = Number(row?.xp ?? 0);
+  const spent = Number(row?.spent ?? 0);
+  const level = Number(row?.xp_level ?? 1);
+  return { aura: Math.max(0, earned - spent), level };
+}
 
 // 7 days — matches the Discord implicit-grant token lifetime. Users
 // re-sign in once a week.
@@ -73,16 +106,17 @@ export async function upsertUser(
   );
   const row = await queryOne<{
     id: string; username: string; global_name: string | null;
-    avatar_hash: string | null; aura: number; level: number;
-  }>(client, 'SELECT id, username, global_name, avatar_hash, aura, level FROM users WHERE id = ?', [profile.id]);
+    avatar_hash: string | null;
+  }>(client, 'SELECT id, username, global_name, avatar_hash FROM users WHERE id = ?', [profile.id]);
   if (!row) throw new Error('upsert_failed');
+  const { aura, level } = await getLiveBalance(client, profile.id);
   return {
     id: row.id,
     username: row.username,
     global_name: row.global_name,
     avatar_url: avatarUrl(row.id, row.avatar_hash),
-    aura: row.aura,
-    level: row.level,
+    aura,
+    level,
   };
 }
 

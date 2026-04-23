@@ -6,7 +6,7 @@
 
 import { Hono } from 'hono';
 import type { AppContext, Env } from '../types';
-import { requireAuth, userId } from '../auth';
+import { requireAuth, userId, getLiveBalance } from '../auth';
 import { db, exec, now, queryAll, queryOne } from '../db';
 
 export const listingRoutes = new Hono<{ Bindings: Env }>();
@@ -67,23 +67,21 @@ listingRoutes.post('/:id/purchase', requireAuth(), async (c: AppContext) => {
   const lid = c.req.param('id')!;
   const client = db(c.env);
 
-  // Load listing + user in parallel. We need both before the TX so we
-  // can return a meaningful error on not-found / insufficient-aura
-  // without opening a transaction for nothing.
-  const [listing, user] = await Promise.all([
+  // Load listing + live balance in parallel. Balance is computed from the
+  // bot-owned xp table minus prior purchases — see auth.ts → getLiveBalance.
+  const [listing, balance] = await Promise.all([
     queryOne<{ id: string; seller_id: string; price_aura: number; status: string; level_req: number }>(
       client,
       'SELECT id, seller_id, price_aura, status, level_req FROM listings WHERE id = ?',
       [lid],
     ),
-    queryOne<{ aura: number; level: number }>(client, 'SELECT aura, level FROM users WHERE id = ?', [uid]),
+    getLiveBalance(client, uid),
   ]);
   if (!listing) return c.json({ error: 'listing_not_found' }, 404);
   if (listing.status !== 'published') return c.json({ error: 'listing_not_available' }, 400);
   if (listing.seller_id === uid) return c.json({ error: 'cannot_buy_own_listing' }, 400);
-  if (!user) return c.json({ error: 'user_not_found' }, 404);
-  if (user.level < listing.level_req) return c.json({ error: 'level_too_low', required: listing.level_req }, 403);
-  if (user.aura < listing.price_aura) return c.json({ error: 'insufficient_aura' }, 402);
+  if (balance.level < listing.level_req) return c.json({ error: 'level_too_low', required: listing.level_req }, 403);
+  if (balance.aura < listing.price_aura) return c.json({ error: 'insufficient_aura' }, 402);
 
   // Check for existing ownership. Re-purchasing is a no-op (returns the
   // existing row) — avoids double-charging on a retry.
@@ -96,12 +94,13 @@ listingRoutes.post('/:id/purchase', requireAuth(), async (c: AppContext) => {
     return c.json({ ok: true, already_owned: true, acquired_at: already.acquired_at });
   }
 
-  // Transaction — libsql `batch` runs the statements atomically.
+  // Transaction — libsql `batch` runs the statements atomically. No
+  // UPDATE on users.aura: live balance is derived from SUM(purchases)
+  // at read time, so the INSERT INTO purchases IS the debit.
   const purchaseId = crypto.randomUUID();
   const t = now();
   await client.batch(
     [
-      { sql: 'UPDATE users SET aura = aura - ? WHERE id = ? AND aura >= ?', args: [listing.price_aura, uid, listing.price_aura] },
       { sql: 'INSERT INTO purchases (id, user_id, listing_id, aura_amount, created_at) VALUES (?, ?, ?, ?, ?)',
         args: [purchaseId, uid, lid, listing.price_aura, t] },
       { sql: 'INSERT INTO user_library (user_id, listing_id, acquired_at) VALUES (?, ?, ?)',
