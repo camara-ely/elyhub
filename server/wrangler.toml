@@ -1,0 +1,60 @@
+# Cloudflare Workers config for the ElyHub backend.
+#
+# Secrets (DISCORD_CLIENT_SECRET, TURSO_TOKEN, JWT_SECRET, R2_ACCESS_KEY_ID,
+# R2_SECRET_ACCESS_KEY) are NOT listed here — set them with
+# `wrangler secret put <NAME>`. They live encrypted on Cloudflare's side
+# and never touch this file (or git).
+#
+# Non-secret config lives under [vars]. Anything here is visible to
+# anyone with repo read access, so keep it to public identifiers only.
+
+name = "elyhub-api"
+main = "src/index.ts"
+compatibility_date = "2025-01-15"
+compatibility_flags = ["nodejs_compat"]
+
+# Environments. `wrangler dev` uses the top-level config; `wrangler deploy`
+# uses [env.production]. Preview deployments use [env.preview].
+[vars]
+ENVIRONMENT = "dev"
+DISCORD_CLIENT_ID = ""          # fill in after creating the Discord app
+DISCORD_REDIRECT_URI = "http://localhost:8787/auth/discord/callback"
+TURSO_URL = ""                  # libsql://your-db.turso.io
+R2_ACCOUNT_ID = ""              # shown on the CF dashboard under "R2"
+R2_BUCKET = "elyhub-assets"
+R2_PUBLIC_BASE = ""             # e.g. https://pub-xxxx.r2.dev (optional — for public reads)
+
+[env.production]
+name = "elyhub-api-prod"
+[env.production.vars]
+ENVIRONMENT = "prod"
+DISCORD_CLIENT_ID = ""
+DISCORD_REDIRECT_URI = "https://elyhub-api-prod.YOUR-SUBDOMAIN.workers.dev/auth/discord/callback"
+TURSO_URL = ""
+R2_ACCOUNT_ID = ""
+R2_BUCKET = "elyhub-assets"
+R2_PUBLIC_BASE = ""
+
+# R2 binding — accessing the bucket directly from Worker code via
+# `env.ASSETS.get(key)` etc. Presigned URLs (for direct client PUT/GET)
+# still need the S3 API via aws4fetch because that's what S3 clients
+# expect; the binding is only used for server-side ops.
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "elyhub-assets"
+
+[[env.production.r2_buckets]]
+binding = "ASSETS"
+bucket_name = "elyhub-assets"
+
+# KV for short-lived pairing codes (plugin device-pair flow).
+# Also used as a simple rate-limit backing store. Replace the empty ids
+# with the real ones after `wrangler kv namespace create PAIRING`.
+[[kv_namespaces]]
+binding = "PAIRING"
+id = ""             # fill in after creating the KV namespace
+preview_id = ""
+
+[[env.production.kv_namespaces]]
+binding = "PAIRING"
+id = ""
