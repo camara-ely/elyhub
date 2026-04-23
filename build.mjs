@@ -63,7 +63,30 @@ function shouldSkip(rel) {
   if (SKIP.has(path.basename(rel))) return true;
   if (SKIP_EXT.has(path.extname(rel))) return true;
   if (rel.includes('/.git/') || rel.endsWith('.map')) return true;
+  // vendor/ holds React dev UMDs for dev; prod versions are copied fresh
+  // from node_modules by copyProdVendor() so skip the dev copies here.
+  if (rel.startsWith('vendor/') || rel.startsWith('vendor\\')) return true;
   return false;
+}
+
+// Copy React + ReactDOM production UMDs out of node_modules into
+// dist-prod/vendor/. Self-hosting means the app runs offline (no unpkg
+// dependency) and doesn't pay for 2 cross-origin script fetches at startup.
+async function copyProdVendor() {
+  const pairs = [
+    ['react/umd/react.production.min.js', 'vendor/react.production.min.js'],
+    ['react-dom/umd/react-dom.production.min.js', 'vendor/react-dom.production.min.js'],
+  ];
+  await ensureDir(path.join(DEST, 'vendor'));
+  for (const [from, to] of pairs) {
+    const src = path.join(__dirname, 'node_modules', from);
+    try {
+      await fs.copyFile(src, path.join(DEST, to));
+    } catch (e) {
+      console.error(`[build] missing ${from} in node_modules — run npm install`);
+      throw e;
+    }
+  }
 }
 
 // Lazy-load the transpiler and minifier so the script gives a clear error
@@ -143,16 +166,16 @@ function rewriteIndexHtml(html) {
     '\n'
   );
 
-  // Swap React/ReactDOM dev UMDs for prod UMDs. We drop the pinned
-  // `integrity` hashes — they target the .development.js bytes. A release
-  // hardening pass can recompute SRI hashes against the prod URLs.
+  // Swap local dev UMDs (vendor/react.development.js) for local prod UMDs
+  // (vendor/react.production.min.js). The prod files are copied out of
+  // node_modules in the main build pass — see copyProdVendor().
   out = out.replace(
-    /<script[^>]*react@([\d.]+)\/umd\/react\.development\.js[^>]*><\/script>/g,
-    '<script src="https://unpkg.com/react@$1/umd/react.production.min.js" crossorigin="anonymous"></script>'
+    /<script\s+src=["']vendor\/react\.development\.js["']\s*><\/script>/g,
+    '<script src="vendor/react.production.min.js"></script>'
   );
   out = out.replace(
-    /<script[^>]*react-dom@([\d.]+)\/umd\/react-dom\.development\.js[^>]*><\/script>/g,
-    '<script src="https://unpkg.com/react-dom@$1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>'
+    /<script\s+src=["']vendor\/react-dom\.development\.js["']\s*><\/script>/g,
+    '<script src="vendor/react-dom.production.min.js"></script>'
   );
 
   // Flip `type="text/babel" src="foo.jsx"` → `src="foo.js"` (drop the type).
@@ -220,9 +243,11 @@ async function main() {
     copyCount++;
   }
 
+  await copyProdVendor();
+
   const dt = ((Date.now() - started) / 1000).toFixed(2);
   console.log(
-    `[build] done in ${dt}s — ${jsxCount} jsx → js, ${htmlCount} html rewritten, ${copyCount} copied → ${path.relative(__dirname, DEST)}/`
+    `[build] done in ${dt}s — ${jsxCount} jsx → js, ${htmlCount} html rewritten, ${copyCount} copied, 2 vendored → ${path.relative(__dirname, DEST)}/`
   );
 }
 

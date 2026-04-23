@@ -16,6 +16,8 @@
     "@babel/core": "^7.25.0",
     "@babel/preset-react": "^7.24.0",
     "@tauri-apps/cli": "^2",
-    "esbuild": "^0.23.0"
+    "esbuild": "^0.23.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   }
 }

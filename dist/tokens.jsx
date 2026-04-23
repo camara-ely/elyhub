@@ -81,13 +81,13 @@ const MEMBERS = [
 const ME = { id: 'me', name: 'Alexandre Ely', tag: 'ely', aura: 29840, level: 32, rank: 6, streak: 14, nextLevelAura: 32000, prevLevelAura: 28000, roles: ['Booster', 'Gym Club', 'Dealmaker'] };
 
 const REWARDS = [
-  { id: 'r1', title: 'Adobe CC',              sub: '1 month · Full suite',   price: 180000, stock: 4,  level: 25, category: 'Software', image: 'assets/adobe.png', featured: true },
-  { id: 'r2', title: 'Spotify Premium',       sub: '1 month · Individual',   price: 48000,  stock: 18, level: 10, category: 'Software', image: 'assets/spotify.png' },
-  { id: 'r3', title: 'Discord Nitro',         sub: '1 month · Full',         price: 60000,  stock: 12, level: 15, category: 'Software', image: 'assets/discord.png' },
-  { id: 'r4', title: 'Custom server role',    sub: 'Name, color & icon',     price: 120000, stock: 99, level: 20, category: 'Club', image: 'assets/tag.png' },
-  { id: 'r5', title: '1:1 with camara',       sub: '30 min call',            price: 300000, stock: 1,  level: 35, category: 'Club', image: 'assets/11.png' },
-  { id: 'r7', title: 'Riot $10',              sub: 'Digital code',           price: 88000,  stock: 10, level: 12, category: 'Cards', image: 'assets/riot.png' },
-  { id: 'r8', title: 'Steam $10',             sub: 'Digital code',           price: 88000,  stock: 14, level: 12, category: 'Cards', image: 'assets/steam.png' },
+  { id: 'r1', title: 'Adobe CC',              sub: '1 month · Full suite',   price: 180000, stock: 4,  level: 25, category: 'Software', image: 'assets/adobe.jpg', featured: true },
+  { id: 'r2', title: 'Spotify Premium',       sub: '1 month · Individual',   price: 48000,  stock: 18, level: 10, category: 'Software', image: 'assets/spotify.jpg' },
+  { id: 'r3', title: 'Discord Nitro',         sub: '1 month · Full',         price: 60000,  stock: 12, level: 15, category: 'Software', image: 'assets/discord.jpg' },
+  { id: 'r4', title: 'Custom server role',    sub: 'Name, color & icon',     price: 120000, stock: 99, level: 20, category: 'Club', image: 'assets/tag.jpg' },
+  { id: 'r5', title: '1:1 with camara',       sub: '30 min call',            price: 300000, stock: 1,  level: 35, category: 'Club', image: 'assets/11.jpg' },
+  { id: 'r7', title: 'Riot $10',              sub: 'Digital code',           price: 88000,  stock: 10, level: 12, category: 'Cards', image: 'assets/riot.jpg' },
+  { id: 'r8', title: 'Steam $10',             sub: 'Digital code',           price: 88000,  stock: 14, level: 12, category: 'Cards', image: 'assets/steam.jpg' },
 ];
 
 const TROPHIES = [

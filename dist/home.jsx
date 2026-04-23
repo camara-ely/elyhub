@@ -152,7 +152,7 @@ function HomeView({ state, setState, setView, onQuick }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
         {/* Weekly identity banner */}
         <Glass style={{ padding: 0, position: 'relative', overflow: 'hidden', height: 200 }}>
-          <img src="assets/ely-lettering.png" alt="" style={{
+          <img src="assets/ely-lettering.jpg" alt="" style={{
             position: 'absolute', inset: 0, width: '100%', height: '100%',
             objectFit: 'cover', objectPosition: 'center',
           }}/>
