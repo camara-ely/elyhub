@@ -19,4 +19,7 @@ window.ELYHUB_CONFIG = {
   discordClientId: '',
   // Poll interval in ms. 5000 = every 5 seconds.
   pollInterval: 5000,
+  // ElyHub backend URL. Dev = http://localhost:8787. Prod = the deployed
+  // Workers URL. Used by dist/api.jsx for auth + marketplace endpoints.
+  apiUrl: 'https://elyhub-api-prod.YOUR-SUBDOMAIN.workers.dev',
 };

@@ -122,6 +122,19 @@
     };
     localStorage.setItem(LS_KEY, JSON.stringify(record));
     current = record;
+
+    // Exchange the Discord token for an ElyHub backend JWT. Non-fatal —
+    // if the backend is down we still let the user in with Discord-only
+    // identity; marketplace writes will just 401 until the backend is
+    // reachable and the next sign-in gets a fresh JWT.
+    if (window.ElyAPI?.exchangeDiscord) {
+      try {
+        await window.ElyAPI.exchangeDiscord(accessToken);
+      } catch (e) {
+        console.warn('[auth] backend exchange failed — continuing Discord-only:', e.message);
+      }
+    }
+
     notify();
     return user;
   }
@@ -129,6 +142,9 @@
   function signOut() {
     localStorage.removeItem(LS_KEY);
     current = null;
+    // Also drop the backend JWT so the next request doesn't attach a stale
+    // token — the two are paired; you can't "partially" sign out.
+    try { window.ElyAPI?.signOut?.(); } catch {}
     notify();
   }
 
