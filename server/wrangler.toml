@@ -17,10 +17,10 @@ compatibility_flags = ["nodejs_compat"]
 # uses [env.production]. Preview deployments use [env.preview].
 [vars]
 ENVIRONMENT = "dev"
-DISCORD_CLIENT_ID = ""          # fill in after creating the Discord app
+DISCORD_CLIENT_ID = "1495648026037977188"
 DISCORD_REDIRECT_URI = "http://localhost:8787/auth/discord/callback"
-TURSO_URL = ""                  # libsql://your-db.turso.io
-R2_ACCOUNT_ID = ""              # shown on the CF dashboard under "R2"
+TURSO_URL = "libsql://elyhub-camara-ely.aws-us-east-1.turso.io"
+R2_ACCOUNT_ID = "4f6588cf30461f62ca4b381c99547570"
 R2_BUCKET = "elyhub-assets"
 R2_PUBLIC_BASE = ""             # e.g. https://pub-xxxx.r2.dev (optional — for public reads)
 
@@ -28,10 +28,10 @@ R2_PUBLIC_BASE = ""             # e.g. https://pub-xxxx.r2.dev (optional — for
 name = "elyhub-api-prod"
 [env.production.vars]
 ENVIRONMENT = "prod"
-DISCORD_CLIENT_ID = ""
+DISCORD_CLIENT_ID = "1495648026037977188"
 DISCORD_REDIRECT_URI = "https://elyhub-api-prod.YOUR-SUBDOMAIN.workers.dev/auth/discord/callback"
-TURSO_URL = ""
-R2_ACCOUNT_ID = ""
+TURSO_URL = "libsql://elyhub-camara-ely.aws-us-east-1.turso.io"
+R2_ACCOUNT_ID = "4f6588cf30461f62ca4b381c99547570"
 R2_BUCKET = "elyhub-assets"
 R2_PUBLIC_BASE = ""
 
@@ -52,9 +52,9 @@ bucket_name = "elyhub-assets"
 # with the real ones after `wrangler kv namespace create PAIRING`.
 [[kv_namespaces]]
 binding = "PAIRING"
-id = ""             # fill in after creating the KV namespace
-preview_id = ""
+id = "f078f819af2c44eaa6fbdb9a0aacdc5a"             # replace after `wrangler kv namespace create PAIRING`
+preview_id = "f078f819af2c44eaa6fbdb9a0aacdc5a"
 
 [[env.production.kv_namespaces]]
 binding = "PAIRING"
-id = ""
+id = "f078f819af2c44eaa6fbdb9a0aacdc5a"

@@ -89,10 +89,17 @@ async function main() {
     const sql = await fs.readFile(path.join(SCHEMA_DIR, f), 'utf8');
     // Split on semicolons that are end-of-line (avoid splitting mid-string).
     // Turso HTTP takes one stmt per request; no multi-statement support.
-    const statements = sql
+    // Strip comment-only lines first, then split on `;\n`. Without the
+    // strip, chunks that start with `-- ...` get thrown out by the
+    // filter below, taking their real SQL down with them.
+    const stripped = sql
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('--'))
+      .join('\n');
+    const statements = stripped
       .split(/;\s*\n/)
       .map((s) => s.trim())
-      .filter((s) => s && !s.startsWith('--'));
+      .filter(Boolean);
     for (const stmt of statements) {
       try {
         await exec(stmt);
