@@ -27,15 +27,20 @@ app.use('*', cors({
   // new plugin hosts are added.
   origin: (origin) => {
     if (!origin) return origin;
-    const allow = [
+    // Fixed production origins — exact match.
+    const exact = new Set([
       'tauri://localhost',
       'http://tauri.localhost',           // Windows Tauri
       'https://tauri.localhost',
-      'http://localhost:1420',            // Tauri dev server
-      'http://localhost:8787',            // wrangler dev
-      // TODO: Adobe CEP panels use file:// or adobe://; add once known.
-    ];
-    return allow.includes(origin) ? origin : null;
+    ]);
+    if (exact.has(origin)) return origin;
+    // Dev: Tauri's webview picks a random port on each boot and serves on
+    // either 127.0.0.1 or localhost. Allow the whole loopback range rather
+    // than chasing ports. Safe — a dev origin can only reach us if the
+    // user's own machine opened it.
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin;
+    // TODO: Adobe CEP panels use file:// or adobe://; add once known.
+    return null;
   },
   credentials: true,
   allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
