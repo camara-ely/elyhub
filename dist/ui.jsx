@@ -11,6 +11,13 @@ const IUser = p => <Icon {...p}><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8
 const IBell = p => <Icon {...p}><path d="M6 17h12l-1.5-2V10a4.5 4.5 0 0 0-9 0v5L6 17zM10 20a2 2 0 0 0 4 0"/></Icon>;
 const ISearch = p => <Icon {...p}><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></Icon>;
 const IGift = p => <Icon {...p}><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13M12 8s-4-5-6-3 2 3 6 3zM12 8s4-5 6-3-2 3-6 3z"/></Icon>;
+const IHeart = p => <Icon {...p}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></Icon>;
+const IFeed = p => <Icon {...p}><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5"/></Icon>;
+const ICompass = p => <Icon {...p}><circle cx="12" cy="12" r="9"/><path d="m15 9-4 2-2 4 4-2z"/></Icon>;
+const IShare = p => <Icon {...p}><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></Icon>;
+const ICopy = p => <Icon {...p}><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></Icon>;
+const IHelp = p => <Icon {...p}><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.5-2.5 2-2.5 3.5"/><circle cx="12" cy="17" r="0.6" fill="currentColor"/></Icon>;
+const IMessage = p => <Icon {...p}><path d="M4 5h16v11H8l-4 4z"/></Icon>;
 const IPlus = p => <Icon {...p}><path d="M12 5v14M5 12h14"/></Icon>;
 const IArrowUp = p => <Icon {...p}><path d="M7 14l5-5 5 5"/></Icon>;
 const IArrowDown = p => <Icon {...p}><path d="M7 10l5 5 5-5"/></Icon>;
@@ -26,6 +33,8 @@ const IVoice = p => <Icon {...p}><rect x="9" y="3" width="6" height="12" rx="3"/
 const IDumbbell = p => <Icon {...p}><path d="M6 8v8M3 10v4M18 8v8M21 10v4M6 12h12"/></Icon>;
 const IBriefcase = p => <Icon {...p}><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 12h18"/></Icon>;
 const ISettings = p => <Icon {...p}><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></Icon>;
+const ILogOut = p => <Icon {...p}><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></Icon>;
+const ILang = p => <Icon {...p}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></Icon>;
 
 const ILogo = ({ size = 24 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -186,9 +195,9 @@ function Segmented({ options, value, onChange }) {
 }
 
 // Glass card wrapper — base for all surfaces
-function Glass({ children, style = {}, hover = false, onClick, level = 1 }) {
+function Glass({ children, style = {}, hover = false, onClick, level = 1, ...rest }) {
   return (
-    <div onClick={onClick} style={{
+    <div {...rest} onClick={onClick} style={{
       ...glass(level),
       ...style,
       cursor: onClick ? 'pointer' : undefined,
@@ -209,8 +218,9 @@ function Glass({ children, style = {}, hover = false, onClick, level = 1 }) {
 }
 
 Object.assign(window, {
-  Icon, IHome, IRank, IStore, ITrophy, IUser, IBell, ISearch, IGift, IPlus,
+  Icon, IHome, IRank, IStore, ITrophy, IUser, IBell, ISearch, IGift, IHeart, IFeed, ICompass, IShare, ICopy, IHelp, IMessage, IPlus,
   IArrowUp, IArrowDown, IDash, IChevR, IChevL, IX, ICheck, IFlame,
   ILock, ISparkle, IVoice, IDumbbell, IBriefcase, ILogo, ISettings,
+  ILogOut, ILang,
   Avatar, Btn, Tag, Delta, Counter, Segmented, Glass,
 });
