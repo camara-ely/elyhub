@@ -6,10 +6,16 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
+    "test": "node --test tests/*.test.mjs",
+    "build:frontend": "node build.mjs",
+    "build:prod": "npm run build:frontend && tauri build --config src-tauri/tauri.conf.prod.json",
     "build": "tauri build",
     "build:debug": "tauri build --debug"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@babel/core": "^7.25.0",
+    "@babel/preset-react": "^7.24.0",
+    "@tauri-apps/cli": "^2",
+    "esbuild": "^0.23.0"
   }
 }

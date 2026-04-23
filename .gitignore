@@ -5,6 +5,9 @@ src-tauri/gen/schemas/
 # Node
 node_modules/
 
+# Build output
+dist-prod/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -13,3 +16,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Secrets — local-only Turso credentials
+dist/config.js
