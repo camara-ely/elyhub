@@ -85,11 +85,13 @@
       `&state=${oauthState}`;
 
     // Open browser AFTER the listener is ready.
+    // NOTE: no window.open fallback — on Windows that caused a second Discord
+    // instance to open (browser + app) leading to a confused double-auth flow.
     try {
       await invoke('open_url', { url: authUrl });
     } catch (e) {
-      console.error('[auth] failed to open browser', e);
-      window.open(authUrl, '_blank'); // last-ditch fallback
+      console.error('[auth] failed to open browser:', e);
+      alert('Could not open the browser. Please open this URL manually:\n\n' + authUrl);
     }
 
     // Phase 2 — wait for the callback token (up to 5 min).

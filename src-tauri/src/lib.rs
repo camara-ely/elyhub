@@ -20,15 +20,14 @@
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::sync::{
-    mpsc::{channel, Receiver},
-    Mutex,
-};
+use std::sync::Mutex;
 use std::time::Duration;
+use tokio::sync::oneshot;
 
-// Shared state: the receiver half of the channel lives here between the two
-// command calls. Wrapped in Mutex so Tauri's multi-thread runtime is happy.
-struct OAuthWaiter(Mutex<Option<Receiver<Result<String, String>>>>);
+// Shared state: the receiver half of a oneshot channel lives here between the
+// two command calls. oneshot is used (vs mpsc) so discord_oauth_await can be
+// a proper async fn that awaits without blocking any thread.
+struct OAuthWaiter(Mutex<Option<oneshot::Receiver<Result<String, String>>>>);
 
 const CALLBACK_HTML: &str = r#"<!doctype html>
 <html><head><title>ElyHub — Signed in</title>
@@ -96,7 +95,7 @@ fn pct_decode(s: &str) -> String {
 // Phase 1 — bind a free port, start the listener thread, return port number.
 #[tauri::command]
 fn discord_oauth_start(state: tauri::State<'_, OAuthWaiter>) -> Result<u16, String> {
-    let (tx, rx) = channel::<Result<String, String>>();
+    let (tx, rx) = oneshot::channel::<Result<String, String>>();
 
     // Scan for a free port so retries don't hit WSAEADDRINUSE.
     let listener = (53134u16..=53200)
@@ -106,8 +105,12 @@ fn discord_oauth_start(state: tauri::State<'_, OAuthWaiter>) -> Result<u16, Stri
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
 
     std::thread::spawn(move || {
+        // tx is consumed on first send — wrap in Option so the loop can
+        // check whether we already sent without moving it.
+        let mut tx_opt = Some(tx);
         listener.set_nonblocking(false).ok();
         for stream_result in listener.incoming() {
+            if tx_opt.is_none() { break; } // already sent — stop accepting
             let mut stream = match stream_result {
                 Ok(s) => s,
                 Err(_) => continue,
@@ -116,9 +119,7 @@ fn discord_oauth_start(state: tauri::State<'_, OAuthWaiter>) -> Result<u16, Stri
 
             let mut buf = [0u8; 8192];
             let n = stream.read(&mut buf).unwrap_or(0);
-            if n == 0 {
-                continue;
-            }
+            if n == 0 { continue; }
             let req = String::from_utf8_lossy(&buf[..n]).to_string();
             let first_line = req.lines().next().unwrap_or("").to_string();
 
@@ -141,11 +142,11 @@ fn discord_oauth_start(state: tauri::State<'_, OAuthWaiter>) -> Result<u16, Stri
                 let _ = stream.write_all(resp);
                 let _ = stream.flush();
                 if let Some(e) = err {
-                    let _ = tx.send(Err(e));
+                    if let Some(t) = tx_opt.take() { let _ = t.send(Err(e)); }
                     break;
                 }
-                if let Some(t) = token {
-                    let _ = tx.send(Ok(t));
+                if let Some(tok) = token {
+                    if let Some(t) = tx_opt.take() { let _ = t.send(Ok(tok)); }
                     break;
                 }
             } else if first_line.starts_with("GET /callback") {
@@ -169,9 +170,11 @@ fn discord_oauth_start(state: tauri::State<'_, OAuthWaiter>) -> Result<u16, Stri
     Ok(port)
 }
 
-// Phase 2 — block until the callback delivers a token (or 5-min timeout).
+// Phase 2 — async wait for the callback token (up to 5 min).
+// Using tokio::time::timeout + oneshot receiver so this command NEVER blocks
+// a thread — the app stays fully responsive while the user authorizes in browser.
 #[tauri::command]
-fn discord_oauth_await(state: tauri::State<'_, OAuthWaiter>) -> Result<String, String> {
+async fn discord_oauth_await(state: tauri::State<'_, OAuthWaiter>) -> Result<String, String> {
     let rx = state
         .0
         .lock()
@@ -179,9 +182,9 @@ fn discord_oauth_await(state: tauri::State<'_, OAuthWaiter>) -> Result<String, S
         .take()
         .ok_or_else(|| "no pending OAuth flow — call discord_oauth_start first".to_string())?;
 
-    match rx.recv_timeout(Duration::from_secs(300)) {
-        Ok(Ok(t)) => Ok(t),
-        Ok(Err(e)) => Err(e),
+    match tokio::time::timeout(Duration::from_secs(300), rx).await {
+        Ok(Ok(result)) => result,  // result is Result<String, String>
+        Ok(Err(_)) => Err("OAuth channel closed unexpectedly".to_string()),
         Err(_) => Err("timed out waiting for Discord authorization".to_string()),
     }
 }
@@ -319,25 +322,38 @@ fn default_download_dir() -> String {
 // depending on the JS shell plugin because the JS side here is plain <script>
 // tags (no bundler), and reaching into the plugin's invoke path is fiddlier
 // than just adding a trivial command.
+//
+// Windows: use explorer.exe rather than `cmd /C start` — explorer passes the
+// URL directly to ShellExecute without cmd.exe's argument parsing, which avoids
+// Discord OAuth URLs (containing & chars) being split at the & by the shell.
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
-    let prog = "open";
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
     #[cfg(target_os = "linux")]
-    let prog = "xdg-open";
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
     #[cfg(target_os = "windows")]
-    let prog = "cmd";
-
-    #[cfg(target_os = "windows")]
-    let args: Vec<&str> = vec!["/C", "start", "", &url];
-    #[cfg(not(target_os = "windows"))]
-    let args: Vec<&str> = vec![&url];
-
-    std::process::Command::new(prog)
-        .args(&args)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    {
+        // explorer.exe opens URLs via ShellExecute — no cmd.exe involved so
+        // & in the URL is never interpreted as a shell operator.
+        std::process::Command::new("explorer")
+            .arg(&url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
