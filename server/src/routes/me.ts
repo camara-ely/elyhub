@@ -11,10 +11,12 @@ import { db, exec, now, queryAll, queryOne } from '../db';
 import { adminListLicenses, adminResetDevices, type Actor } from '../lib/kassa-licensing';
 
 export const meRoutes = new Hono<{ Bindings: Env }>();
-meRoutes.use('*', requireAuth());
+// NOTE: do NOT put requireAuth() here as a global — /poll uses optionalAuth()
+// to serve public data (members, feed) without a JWT. Each route that needs
+// auth applies requireAuth() individually via the handler signature below.
 
 // GET /me — canonical "who am I"; also bumps last_seen_at.
-meRoutes.get('/', async (c: AppContext) => {
+meRoutes.get('/', requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const client = db(c.env);
   await exec(client, 'UPDATE users SET last_seen_at = ? WHERE id = ?', [now(), uid]);
@@ -51,7 +53,7 @@ meRoutes.get('/', async (c: AppContext) => {
 // license_pending = true when the listing IS a Kassa product but the
 // license_key hasn't been written yet (the Supabase call was retrying
 // in the background). Client should show "emitindo…" and poll.
-meRoutes.get('/library', async (c: AppContext) => {
+meRoutes.get("/library", requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const rows = await queryAll<{
     listing_id: string;
@@ -91,7 +93,7 @@ meRoutes.get('/library', async (c: AppContext) => {
 });
 
 // GET /me/wishlist
-meRoutes.get('/wishlist', async (c: AppContext) => {
+meRoutes.get("/wishlist", requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const rows = await queryAll<{ listing_id: string; added_at: number }>(
     db(c.env),
@@ -102,7 +104,7 @@ meRoutes.get('/wishlist', async (c: AppContext) => {
 });
 
 // POST /me/wishlist/:listing_id — idempotent add
-meRoutes.post('/wishlist/:listing_id', async (c: AppContext) => {
+meRoutes.post("/wishlist/:listing_id", requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const lid = c.req.param('listing_id')!;
   await exec(
@@ -114,7 +116,7 @@ meRoutes.post('/wishlist/:listing_id', async (c: AppContext) => {
 });
 
 // DELETE /me/wishlist/:listing_id
-meRoutes.delete('/wishlist/:listing_id', async (c: AppContext) => {
+meRoutes.delete("/wishlist/:listing_id", requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const lid = c.req.param('listing_id')!;
   await exec(db(c.env), 'DELETE FROM wishlist WHERE user_id = ? AND listing_id = ?', [uid, lid]);
@@ -122,7 +124,7 @@ meRoutes.delete('/wishlist/:listing_id', async (c: AppContext) => {
 });
 
 // GET /me/follows — users I follow
-meRoutes.get('/follows', async (c: AppContext) => {
+meRoutes.get("/follows", requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const rows = await queryAll<{ followee_id: string; created_at: number }>(
     db(c.env),
@@ -132,7 +134,7 @@ meRoutes.get('/follows', async (c: AppContext) => {
   return c.json({ items: rows });
 });
 
-meRoutes.post('/follows/:user_id', async (c: AppContext) => {
+meRoutes.post("/follows/:user_id", requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const target = c.req.param('user_id')!;
   if (target === uid) return c.json({ error: 'cannot_follow_self' }, 400);
@@ -144,7 +146,7 @@ meRoutes.post('/follows/:user_id', async (c: AppContext) => {
   return c.json({ ok: true });
 });
 
-meRoutes.delete('/follows/:user_id', async (c: AppContext) => {
+meRoutes.delete("/follows/:user_id", requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const target = c.req.param('user_id')!;
   await exec(db(c.env), 'DELETE FROM follows WHERE follower_id = ? AND followee_id = ?', [uid, target]);
@@ -168,7 +170,7 @@ meRoutes.delete('/follows/:user_id', async (c: AppContext) => {
 // starting with "KC-FC96-" and ending with "-B983" is a safe match (collision
 // would require two keys sharing a 7-char prefix AND 5-char suffix, which is
 // astronomically unlikely with random keys).
-meRoutes.get('/licenses', async (c: AppContext) => {
+meRoutes.get("/licenses", requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   // Internal trust: Worker has the HMAC secret, so we can mint a server-side
   // actor. The Supabase fn verifies the HMAC and honors the role — we're NOT
@@ -240,7 +242,7 @@ meRoutes.get('/licenses', async (c: AppContext) => {
 // server-side (the Supabase fn sees user_id implicitly via license_id but we
 // double-check here so a forged license_id from another user is rejected
 // BEFORE we hit Supabase).
-meRoutes.post('/licenses/:id/reset-devices', async (c: AppContext) => {
+meRoutes.post("/licenses/:id/reset-devices", requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const licenseId = c.req.param('id')!;
 
@@ -313,7 +315,7 @@ meRoutes.post('/licenses/:id/reset-devices', async (c: AppContext) => {
 const ENQUEUE_KINDS = new Set([
   'gift', 'daily_tag', 'daily_booster', 'redeem',
 ]);
-meRoutes.post('/enqueue-op', async (c: AppContext) => {
+meRoutes.post("/enqueue-op", requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   let body: any;
   try { body = await c.req.json(); } catch { return c.json({ error: 'bad_json' }, 400); }
@@ -365,7 +367,7 @@ meRoutes.post('/enqueue-op', async (c: AppContext) => {
 // ──── GET /me/op-result/:id ────
 // Polls pending_ops for the result row. Lets the client wait for the bot's
 // worker to apply (or reject) without needing direct Turso read access.
-meRoutes.get('/op-result/:id', async (c: AppContext) => {
+meRoutes.get("/op-result/:id", requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const id = c.req.param('id')!;
   const client = db(c.env);
