@@ -37,6 +37,21 @@ function ResetSubscriptionButton() {
     setStage('busy');
     try {
       await window.ElyAPI?.post('/me/subscriptions/gleipnir/reset', {});
+      // Clear client-side library entries for gleipnir so the UI reflects
+      // the reset immediately on reload (server cleared the DB, we clear localStorage).
+      try {
+        const gleipnirIds = new Set(
+          (window.LISTINGS || [])
+            .filter((l) => (l.kassa_product_id || l.kassaProductId) === 'gleipnir')
+            .map((l) => l.id)
+        );
+        const raw = localStorage.getItem('elyhub.library.v1');
+        if (raw) {
+          const lib = JSON.parse(raw);
+          const cleaned = lib.filter((it) => !gleipnirIds.has(it.listingId));
+          localStorage.setItem('elyhub.library.v1', JSON.stringify(cleaned));
+        }
+      } catch {}
       try { ElyNotify?.toast?.({ text: 'Subscription reset — reloading…', kind: 'success' }); } catch {}
       setTimeout(() => location.reload(), 900);
     } catch (err) {
