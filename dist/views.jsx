@@ -12,6 +12,49 @@
 //   • useTweaks / TweaksPanel         — runtime theme editor overlay
 //   • WelcomeModal + wasWelcomed/markWelcomed — post-login splash
 
+// ──── ResetSubscriptionButton — dev/owner-only reset for Hugin subscription ────
+// Visible only to admin IDs 264327419027128320 and 462672954585776131.
+// Wipes purchases + library + license_keys rows so the owner can re-test
+// the subscription flow from scratch without touching the Kassa dashboard.
+function ResetSubscriptionButton({ listingIds }) {
+  const [busy, setBusy] = React.useState(false);
+  const reset = async () => {
+    if (busy) return;
+    if (!window.confirm('Reset your Hugin subscription? This wipes your local purchase records so you appear unsubscribed. Aura is refunded.')) return;
+    setBusy(true);
+    try {
+      const res = await window.ElyAPI?.post('/me/subscriptions/gleipnir/reset', {});
+      if (res?.ok) {
+        try { ElyNotify?.toast?.({ text: 'Subscription reset — reloading…', kind: 'success' }); } catch {}
+        setTimeout(() => location.reload(), 900);
+      } else {
+        try { ElyNotify?.toast?.({ text: `Reset failed: ${res?.error || 'unknown'}`, kind: 'warn' }); } catch {}
+      }
+    } catch (err) {
+      try { ElyNotify?.toast?.({ text: `Reset error: ${err?.message || err}`, kind: 'warn' }); } catch {}
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      onClick={reset}
+      disabled={busy}
+      title="Dev only — reset subscription to unsubscribed state"
+      style={{
+        padding: '8px 14px', background: 'transparent',
+        border: '1px solid rgba(255,200,50,0.45)',
+        color: '#f5c451', cursor: busy ? 'progress' : 'pointer',
+        fontFamily: '"Cinzel","Cormorant SC",serif', fontSize: 10,
+        letterSpacing: '0.18em', textTransform: 'uppercase',
+        fontWeight: 600, transition: 'all .15s', opacity: busy ? 0.6 : 1,
+      }}
+      onMouseEnter={(e) => { if (!busy) { e.currentTarget.style.borderColor = 'rgba(255,200,50,0.85)'; e.currentTarget.style.background = 'rgba(255,200,50,0.1)'; } }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,200,50,0.45)'; e.currentTarget.style.background = 'transparent'; }}
+    >{busy ? '…' : '⚙ Reset sub'}</button>
+  );
+}
+
 // ──── PluginPanelView — the "inside" of a subscribed plugin ────
 // ──── ZephyroView — first-party plugin with exclusive sidebar tab ────
 // Dual-state page driven by the user's subscription status on listing
@@ -596,13 +639,13 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
             {/* Label */}
             <div style={{
-              fontFamily: T.fontSans, fontSize: 11, letterSpacing: '0.28em',
+              fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.28em',
               textTransform: 'uppercase', color: T.text3, fontWeight: 600,
             }}>LICENSE</div>
             {/* Divider */}
             <div style={{ width: 1, height: 22, background: `rgba(150,100,200,0.3)` }}/>
             {/* Tier */}
-            <div style={{ fontFamily: T.fontSans, fontSize: 15, color: T.text, fontWeight: 500 }}>
+            <div style={{ fontFamily: ZSERIF, fontSize: 15, color: T.text2, fontWeight: 500 }}>
               {(() => {
                 const m = (listing.kassa_tier || listing.kassaTier || '').match(/^(\d+)key$/i);
                 const tierTxt = m ? `${m[1]} ${m[1] === '1' ? 'Key' : 'Keys'}` : 'Pro';
@@ -620,7 +663,7 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.lilac, boxShadow: `0 0 6px rgba(150,100,200,0.5)`, flexShrink: 0 }}/>
               )}
               <span style={{
-                fontFamily: T.fontSans, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
+                fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
                 fontWeight: 600,
                 color: cancelledButValid ? '#f4849a' : warn ? '#f5c451' : T.lilac,
               }}>
@@ -639,12 +682,15 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
                   padding: '8px 16px', background: 'transparent',
                   border: `1px solid rgba(239,107,124,0.5)`,
                   color: '#f4849a', cursor: 'pointer',
-                  fontFamily: T.fontSans, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
+                  fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
                   fontWeight: 600, transition: 'all .15s',
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#ef6b7c'; e.currentTarget.style.background = 'rgba(239,107,124,0.12)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(239,107,124,0.5)'; e.currentTarget.style.background = 'transparent'; }}
               >Cancel subscription</button>
+            )}
+            {['264327419027128320', '462672954585776131'].includes(window.ME?.id) && (
+              <ResetSubscriptionButton listingIds={tiers.map((t) => t.id)} />
             )}
             <button
               onClick={() => setView({ id: 'library' })}
@@ -652,7 +698,7 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
                 padding: '8px 18px', background: 'transparent',
                 border: `1px solid rgba(150,100,200,0.45)`,
                 color: T.lilac, cursor: 'pointer',
-                fontFamily: T.fontSans, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
+                fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
                 fontWeight: 600, transition: 'all .15s',
               }}
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(150,100,200,0.8)'; e.currentTarget.style.background = `rgba(150,100,200,0.1)`; }}

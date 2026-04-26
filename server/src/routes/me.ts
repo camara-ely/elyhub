@@ -504,3 +504,63 @@ meRoutes.get('/poll', optionalAuth(), async (c: AppContext) => {
     server: serverMeta,
   });
 });
+
+// ──── POST /me/subscriptions/gleipnir/reset ────
+// Owner-only dev helper: wipes all local purchase/library/license records
+// for the Hugin ("gleipnir") product so the caller appears unsubscribed.
+// Aura is implicitly refunded because live balance = xp minus SUM(purchases).
+// Gated to KASSA_OWNER_IDS; returns 403 for everyone else.
+meRoutes.post('/subscriptions/gleipnir/reset', requireAuth(), async (c: AppContext) => {
+  const uid = userId(c);
+  const ownerIds = (c.env.KASSA_OWNER_IDS || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+  if (!ownerIds.includes(uid)) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+
+  const client = db(c.env);
+
+  // 1. Find all listing IDs for product gleipnir.
+  const gleipnirListings = await queryAll<{ id: string }>(
+    client,
+    `SELECT id FROM listings WHERE kassa_product_id = 'gleipnir'`,
+  );
+  const listingIds = gleipnirListings.map((r) => r.id);
+
+  if (listingIds.length > 0) {
+    const placeholders = listingIds.map(() => '?').join(',');
+
+    // 2. Delete purchases (restores live aura balance).
+    try {
+      await exec(client,
+        `DELETE FROM purchases WHERE user_id = ? AND listing_id IN (${placeholders})`,
+        [uid, ...listingIds],
+      );
+    } catch { /* table may not exist */ }
+
+    // 3. Delete user_library rows.
+    try {
+      await exec(client,
+        `DELETE FROM user_library WHERE user_id = ? AND listing_id IN (${placeholders})`,
+        [uid, ...listingIds],
+      );
+    } catch { /* table may not exist */ }
+
+    // 4. Delete user_license_keys rows (by listing_id OR product_id).
+    try {
+      await exec(client,
+        `DELETE FROM user_license_keys WHERE user_id = ? AND (listing_id IN (${placeholders}) OR product_id = 'gleipnir')`,
+        [uid, ...listingIds],
+      );
+    } catch { /* table may not exist */ }
+  } else {
+    // No listings found — still try to clean up by product_id alone.
+    try {
+      await exec(client,
+        `DELETE FROM user_license_keys WHERE user_id = ? AND product_id = 'gleipnir'`,
+        [uid],
+      );
+    } catch { /* table may not exist */ }
+  }
+
+  return c.json({ ok: true });
+});
