@@ -424,11 +424,13 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
                       <>
                         <span style={{
                           padding: '5px 14px',
-                          background: `linear-gradient(180deg, ${ZGOLDHI}, ${ZGOLD} 50%, ${ZGOLDLO})`,
-                          color: ZINK, fontFamily: ZCAPS, fontWeight: 500, fontSize: 10,
-                          letterSpacing: '0.22em', textTransform: 'uppercase',
-                          boxShadow: `0 0 14px ${ZGOLDGLOW}`,
+                          background: 'rgba(150,100,200,0.15)',
+                          border: '1px solid rgba(150,100,200,0.55)',
+                          color: T.lilac, fontFamily: T.fontSans, fontWeight: 600, fontSize: 10,
+                          letterSpacing: '0.18em', textTransform: 'uppercase',
+                          boxShadow: '0 0 10px rgba(150,100,200,0.2)',
                           display: 'inline-flex', alignItems: 'center', gap: 6,
+                          borderRadius: T.r.pill,
                         }}>✦ Active</span>
                         {exp && (
                           <span style={{
@@ -458,40 +460,42 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
                   <button
                     onClick={launch}
                     style={{
-                      padding: '14px 32px',
-                      background: `linear-gradient(180deg, ${ZGOLDHI}, ${ZGOLD} 50%, ${ZGOLDLO})`,
-                      color: ZINK, cursor: 'pointer', flexShrink: 0,
-                      // Auto-margin left pushes the CTA flush against the
-                      // banner's right edge regardless of how the text column
-                      // grew. Otherwise it sat next to the tagline and
-                      // overlapped the parchment frame visualizer.
+                      padding: '12px 28px',
+                      background: 'rgba(150,100,200,0.15)',
+                      border: '1px solid rgba(150,100,200,0.65)',
+                      color: T.lilac, cursor: 'pointer', flexShrink: 0,
                       marginLeft: 'auto',
-                      fontFamily: ZCAPS, fontWeight: 600, fontSize: 12,
-                      letterSpacing: '0.22em', textTransform: 'uppercase',
-                      border: `1px solid ${ZGOLDLO}`,
-                      boxShadow: `0 8px 28px ${ZGOLDGLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`,
+                      fontFamily: T.fontSans, fontWeight: 600, fontSize: 12,
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                      borderRadius: T.r.pill,
+                      boxShadow: '0 4px 16px rgba(150,100,200,0.2)',
+                      transition: 'all .15s',
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 10px 36px ${ZGOLDGLOW}, 0 0 24px ${ZGOLDGLOW}, inset 0 1px 0 rgba(255,255,255,0.5)`; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.boxShadow = `0 8px 28px ${ZGOLDGLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`; }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(150,100,200,0.28)'; e.currentTarget.style.borderColor = 'rgba(150,100,200,0.85)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(150,100,200,0.15)'; e.currentTarget.style.borderColor = 'rgba(150,100,200,0.65)'; }}
                   >✦ Launch Hugin</button>
                 ) : active ? (
                   <button
                     onClick={downloadPlugin}
                     disabled={downloading}
                     style={{
-                      padding: '14px 32px',
-                      background: `linear-gradient(180deg, ${ZGOLDHI}, ${ZGOLD} 50%, ${ZGOLDLO})`,
-                      color: ZINK, cursor: downloading ? 'progress' : 'pointer', flexShrink: 0,
+                      padding: '12px 28px',
+                      background: 'rgba(150,100,200,0.15)',
+                      border: '1px solid rgba(150,100,200,0.65)',
+                      color: T.lilac, cursor: downloading ? 'progress' : 'pointer', flexShrink: 0,
                       marginLeft: 'auto',
-                      fontFamily: ZCAPS, fontWeight: 600, fontSize: 12,
-                      letterSpacing: '0.22em', textTransform: 'uppercase',
-                      border: `1px solid ${ZGOLDLO}`,
-                      boxShadow: `0 8px 28px ${ZGOLDGLOW}, inset 0 1px 0 rgba(255,255,255,0.4)`,
+                      fontFamily: T.fontSans, fontWeight: 600, fontSize: 12,
+                      letterSpacing: '0.18em', textTransform: 'uppercase',
+                      borderRadius: T.r.pill,
+                      boxShadow: '0 4px 16px rgba(150,100,200,0.2)',
                       display: 'inline-flex', alignItems: 'center', gap: 10,
                       opacity: downloading ? 0.85 : 1,
+                      transition: 'all .15s',
                     }}
+                    onMouseEnter={(e) => { if (!downloading) { e.currentTarget.style.background = 'rgba(150,100,200,0.28)'; e.currentTarget.style.borderColor = 'rgba(150,100,200,0.85)'; } }}
+                    onMouseLeave={(e) => { if (!downloading) { e.currentTarget.style.background = 'rgba(150,100,200,0.15)'; e.currentTarget.style.borderColor = 'rgba(150,100,200,0.65)'; } }}
                   >
-                    {downloading && <Spinner size={14} color={ZINK}/>}
+                    {downloading && <Spinner size={14} color={T.lilac}/>}
                     {downloading ? 'Summoning…' : 'Download Hugin ↓'}
                   </button>
                 ) : (
@@ -550,15 +554,19 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
                 onClick={subscribe}
                 disabled={pending || locked}
                 style={{
-                  marginTop: 10, padding: '12px 24px', borderRadius: T.r.pill, border: 'none',
-                  background: locked ? 'rgba(255,255,255,0.06)' : `linear-gradient(135deg, ${T.lilac}, ${T.accentHi})`,
-                  color: locked ? T.text3 : '#fff',
+                  marginTop: 10, padding: '12px 24px', borderRadius: T.r.pill,
+                  border: `1px solid ${locked ? 'rgba(150,100,200,0.2)' : 'rgba(150,100,200,0.6)'}`,
+                  background: locked ? 'rgba(255,255,255,0.04)' : 'rgba(150,100,200,0.15)',
+                  color: locked ? T.text3 : T.lilac,
                   cursor: pending ? 'progress' : locked ? 'not-allowed' : 'pointer',
                   fontFamily: T.fontSans, fontWeight: 600, fontSize: 14,
-                  boxShadow: locked ? 'none' : `0 6px 22px ${T.lilac}66`,
+                  boxShadow: 'none',
                   display: 'inline-flex', alignItems: 'center', gap: 8,
                   opacity: pending ? 0.85 : 1,
+                  transition: 'all .15s',
                 }}
+                onMouseEnter={(e) => { if (!locked && !pending) { e.currentTarget.style.background = 'rgba(150,100,200,0.28)'; e.currentTarget.style.borderColor = 'rgba(150,100,200,0.85)'; } }}
+                onMouseLeave={(e) => { if (!locked && !pending) { e.currentTarget.style.background = 'rgba(150,100,200,0.15)'; e.currentTarget.style.borderColor = 'rgba(150,100,200,0.6)'; } }}
               >
                 {pending && <Spinner size={14} color="#fff"/>}
                 {pending ? 'Subscribing…'
@@ -577,10 +585,10 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
       {active ? (
         <div style={{
           maxWidth: 1100, margin: '-4px auto 22px',
-          border: `1px solid rgba(201,162,78,0.55)`,
-          borderTop: `1px solid rgba(201,162,78,0.2)`,
-          background: 'linear-gradient(180deg, rgba(40,30,10,0.95), rgba(20,15,5,0.98))',
-          boxShadow: `0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(201,162,78,0.12)`,
+          border: `1px solid rgba(150,100,200,0.45)`,
+          borderTop: `1px solid rgba(150,100,200,0.15)`,
+          background: 'linear-gradient(180deg, rgba(20,12,35,0.97), rgba(12,8,22,0.99))',
+          boxShadow: `0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(150,100,200,0.1)`,
           padding: '14px 24px',
           display: 'flex', alignItems: 'center', gap: 16,
           justifyContent: 'space-between',
@@ -588,13 +596,13 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
             {/* Label */}
             <div style={{
-              fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.28em',
-              textTransform: 'uppercase', ...goldText, fontWeight: 600,
+              fontFamily: T.fontSans, fontSize: 11, letterSpacing: '0.28em',
+              textTransform: 'uppercase', color: T.text3, fontWeight: 600,
             }}>LICENSE</div>
             {/* Divider */}
-            <div style={{ width: 1, height: 22, background: `rgba(201,162,78,0.35)` }}/>
+            <div style={{ width: 1, height: 22, background: `rgba(150,100,200,0.3)` }}/>
             {/* Tier */}
-            <div style={{ fontFamily: ZSERIF, fontSize: 15, color: '#f4ecd0', fontWeight: 500 }}>
+            <div style={{ fontFamily: T.fontSans, fontSize: 15, color: T.text, fontWeight: 500 }}>
               {(() => {
                 const m = (listing.kassa_tier || listing.kassaTier || '').match(/^(\d+)key$/i);
                 const tierTxt = m ? `${m[1]} ${m[1] === '1' ? 'Key' : 'Keys'}` : 'Pro';
@@ -603,18 +611,18 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
               })()}
             </div>
             {/* Divider */}
-            <div style={{ width: 1, height: 22, background: `rgba(201,162,78,0.35)` }}/>
+            <div style={{ width: 1, height: 22, background: `rgba(150,100,200,0.3)` }}/>
             {/* Status dot + label */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {cancelledButValid ? (
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef6b7c', boxShadow: '0 0 6px #ef6b7c', flexShrink: 0 }}/>
               ) : (
-                <span style={{ width: 6, height: 6, background: ZGOLD, boxShadow: `0 0 6px ${ZGOLDGLOW}`, flexShrink: 0 }}/>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: T.lilac, boxShadow: `0 0 6px rgba(150,100,200,0.5)`, flexShrink: 0 }}/>
               )}
               <span style={{
-                fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
+                fontFamily: T.fontSans, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
                 fontWeight: 600,
-                color: cancelledButValid ? '#f4849a' : warn ? '#f5c451' : ZGOLDHI,
+                color: cancelledButValid ? '#f4849a' : warn ? '#f5c451' : T.lilac,
               }}>
                 {cancelledButValid
                   ? `Cancelled — access ${exp ? `for ${exp}` : 'until expiry'}`
@@ -631,7 +639,7 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
                   padding: '8px 16px', background: 'transparent',
                   border: `1px solid rgba(239,107,124,0.5)`,
                   color: '#f4849a', cursor: 'pointer',
-                  fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
+                  fontFamily: T.fontSans, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
                   fontWeight: 600, transition: 'all .15s',
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#ef6b7c'; e.currentTarget.style.background = 'rgba(239,107,124,0.12)'; }}
@@ -642,13 +650,13 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
               onClick={() => setView({ id: 'library' })}
               style={{
                 padding: '8px 18px', background: 'transparent',
-                border: `1px solid rgba(201,162,78,0.45)`,
-                color: ZGOLDHI, cursor: 'pointer',
-                fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
+                border: `1px solid rgba(150,100,200,0.45)`,
+                color: T.lilac, cursor: 'pointer',
+                fontFamily: T.fontSans, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
                 fontWeight: 600, transition: 'all .15s',
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = ZGOLD; e.currentTarget.style.background = `rgba(201,162,78,0.1)`; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(201,162,78,0.45)'; e.currentTarget.style.background = 'transparent'; }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(150,100,200,0.8)'; e.currentTarget.style.background = `rgba(150,100,200,0.1)`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(150,100,200,0.45)'; e.currentTarget.style.background = 'transparent'; }}
             >Manage in library</button>
           </div>
         </div>
