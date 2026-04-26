@@ -349,13 +349,13 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
                   <span
                     title={`${newListingCount} new ${newListingCount === 1 ? 'listing' : 'listings'}`}
                     style={{
-                      padding: '1px 7px', borderRadius: T.r.pill,
+                      padding: '2px 8px', borderRadius: T.r.pill,
                       background: `linear-gradient(135deg, ${T.accentHi}, ${T.accent})`,
                       color: '#fff',
                       fontFamily: T.fontSans, fontWeight: 700, fontSize: 9,
                       letterSpacing: '0.08em', textTransform: 'uppercase',
                       boxShadow: `0 0 8px ${T.accent}88`,
-                      lineHeight: 1.4,
+                      lineHeight: 1.4, whiteSpace: 'nowrap', flexShrink: 0,
                     }}
                   >
                     {newListingCount > 9 ? '9+' : newListingCount} new
@@ -365,13 +365,13 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
                   <span
                     title={`${it.newPip} new from followed creators`}
                     style={{
-                      padding: '1px 7px', borderRadius: T.r.pill,
+                      padding: '2px 8px', borderRadius: T.r.pill,
                       background: `linear-gradient(135deg, ${T.accentHi}, ${T.accent})`,
                       color: '#fff',
                       fontFamily: T.fontSans, fontWeight: 700, fontSize: 9,
                       letterSpacing: '0.08em', textTransform: 'uppercase',
                       boxShadow: `0 0 8px ${T.accent}88`,
-                      lineHeight: 1.4,
+                      lineHeight: 1.4, whiteSpace: 'nowrap', flexShrink: 0,
                     }}
                   >
                     {it.newPip > 9 ? '9+' : it.newPip} new
