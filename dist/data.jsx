@@ -196,7 +196,7 @@
   // Polls the Worker (which scopes the lookup to the authed user — the
   // client can't probe other users' op outcomes). Returns the bot's result
   // string, or null on timeout.
-  async function waitForOpResult(id, { timeoutMs = 15000, pollMs = 1500 } = {}) {
+  async function waitForOpResult(id, { timeoutMs = 6000, pollMs = 800 } = {}) {
     if (!window.ElyAPI?.get) return null;
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -291,13 +291,23 @@
       if (!toUserId || !Number.isInteger(amount) || amount <= 0) {
         throw new Error('invalid gift params');
       }
-      const { id, result } = await enqueueOp(
-        { kind: 'gift', fromUserId: authed.id, toUserId: String(toUserId), amount, note },
-        { await: true },
-      );
-      if (result && result !== 'ok') throw new Error(result);
-      // Optimistic: sender loses the amount immediately. Next poll reconciles.
+      // Optimistic: debit immediately so the sender's balance drops before
+      // the bot confirms. If the op is rejected, we roll back below.
       applyOptimistic({ auraDelta: -amount });
+      let id, result;
+      try {
+        ({ id, result } = await enqueueOp(
+          { kind: 'gift', fromUserId: authed.id, toUserId: String(toUserId), amount, note },
+          { await: true },
+        ));
+      } catch (e) {
+        applyOptimistic({ auraDelta: +amount }); // rollback on network error
+        throw e;
+      }
+      if (result && result !== 'ok') {
+        applyOptimistic({ auraDelta: +amount }); // rollback on bot rejection
+        throw new Error(result);
+      }
       return { id, result };
     },
 
@@ -359,6 +369,12 @@
       // the poll will reconcile back to the real value.
       applyOptimistic({ auraDelta: -price });
       return { id, result };
+    },
+
+    /** Force-refresh all data (members, aura, listings). Useful after a purchase or aura send. */
+    refresh() {
+      setTimeout(fetchOnce, 0);
+      setTimeout(fetchListingsOnce, 100);
     },
   };
 

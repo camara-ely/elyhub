@@ -1689,6 +1689,22 @@ function ThemeTile({ config, label, active, onClick, accentColor, dim = false, l
             transform: 'translate(-50%, -50%)',
           }}/>
         ))}
+        {/* Zodiac special: add a thin gold border + ✦ rune overlay so
+            the tile reads as "celestial" even at small size. */}
+        {config?.unlock?.kassa && (
+          <>
+            <div style={{
+              position: 'absolute', inset: 0, pointerEvents: 'none',
+              background: 'linear-gradient(135deg, rgba(201,162,78,0.18) 0%, transparent 60%)',
+            }}/>
+            <span style={{
+              position: 'absolute', top: 6, right: 8,
+              color: '#C9A24E', fontSize: 13, lineHeight: 1,
+              filter: 'drop-shadow(0 0 5px #C9A24E99)',
+              pointerEvents: 'none',
+            }}>✦</span>
+          </>
+        )}
       </div>
       <div style={{
         padding: '7px 6px', fontSize: 11, fontWeight: 500,

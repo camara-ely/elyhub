@@ -159,6 +159,10 @@ const THEME_PRESETS = {
     points: [
       { id: 'p1', x: 80,  y: 8,  size: 70, color: '#C9A24E', alpha: 0.18, blur: 140, factor: 0.10, blend: 'screen' },
       { id: 'p2', x: 8,   y: 92, size: 80, color: '#7A5A22', alpha: 0.16, blur: 160, factor: 0.08, blend: 'screen' },
+      // Extra points sized for the 64px ThemeTile preview — centered gold glow
+      // that makes the card read as "zodiac gold" at small size.
+      { id: 'tp1', x: 75, y: 25, size: 40, color: '#C9A24E', alpha: 0.55, blur: 40, factor: 0.20, blend: 'screen' },
+      { id: 'tp2', x: 25, y: 70, size: 30, color: '#E8C96E', alpha: 0.40, blur: 30, factor: 0.15, blend: 'screen' },
     ],
     unlock: { kassa: 'gleipnir' },
   },

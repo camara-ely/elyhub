@@ -46,27 +46,27 @@ memberRoutes.get('/', requireAuth(), async (c: AppContext) => {
   let orderClause: string;
   switch (sort) {
     case 'aura':
-      orderClause = 'xp DESC, COALESCE(joined_at, updated_at * 1000) DESC';
+      orderClause = 'MAX(0, x.xp - COALESCE(p.spent, 0)) DESC, COALESCE(x.joined_at, x.updated_at * 1000) DESC';
       break;
     case 'name':
-      orderClause = 'COALESCE(display_name, user_id) COLLATE NOCASE ASC';
+      orderClause = 'COALESCE(x.display_name, x.user_id) COLLATE NOCASE ASC';
       break;
     case 'oldest':
-      orderClause = 'COALESCE(joined_at, updated_at * 1000) ASC';
+      orderClause = 'COALESCE(x.joined_at, x.updated_at * 1000) ASC';
       break;
     case 'active':
-      orderClause = 'updated_at DESC';
+      orderClause = 'x.updated_at DESC';
       break;
     case 'joined':
     default:
-      orderClause = 'COALESCE(joined_at, updated_at * 1000) DESC';
+      orderClause = 'COALESCE(x.joined_at, x.updated_at * 1000) DESC';
       break;
   }
 
   const where: string[] = [];
   const args: (string | number)[] = [];
   if (search) {
-    where.push('(LOWER(display_name) LIKE ? OR user_id LIKE ?)');
+    where.push('(LOWER(x.display_name) LIKE ? OR x.user_id LIKE ?)');
     args.push(`${search}%`, `${search}%`);
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -83,9 +83,15 @@ memberRoutes.get('/', requireAuth(), async (c: AppContext) => {
     updated_at: number;
   }>(
     client,
-    `SELECT user_id, display_name, avatar_url, xp, level, roles,
-            joined_at, updated_at
-     FROM xp
+    `SELECT x.user_id, x.display_name, x.avatar_url,
+            MAX(0, x.xp - COALESCE(p.spent, 0)) AS xp,
+            x.level, x.roles, x.joined_at, x.updated_at
+     FROM xp x
+     LEFT JOIN (
+       SELECT user_id, SUM(aura_amount) AS spent
+       FROM purchases
+       GROUP BY user_id
+     ) p ON p.user_id = x.user_id
      ${whereSql}
      ORDER BY ${orderClause}
      LIMIT ? OFFSET ?`,
@@ -94,7 +100,7 @@ memberRoutes.get('/', requireAuth(), async (c: AppContext) => {
 
   const totalRow = await queryOne<{ total: number }>(
     client,
-    `SELECT COUNT(*) AS total FROM xp ${whereSql}`,
+    `SELECT COUNT(*) AS total FROM xp x LEFT JOIN (SELECT user_id, SUM(aura_amount) AS spent FROM purchases GROUP BY user_id) p ON p.user_id = x.user_id ${whereSql}`,
     args,
   );
 

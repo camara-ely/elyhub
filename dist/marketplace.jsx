@@ -896,6 +896,13 @@ function MarketHomeView({ state, setView, onQuick, focusId, wishlist, recent, bl
   const [activeType, setActiveType] = React.useState('all');
   const [query, setQuery] = React.useState('');
   const [sort, setSort] = React.useState('trending'); // trending | new | priceAsc | priceDesc | rating
+  const [refreshing, setRefreshing] = React.useState(false);
+  const handleRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    window.ElyOps?.refresh?.();
+    await new Promise(r => setTimeout(r, 1500));
+    setRefreshing(false);
+  }, []);
   // Richer filters — collapsed by default to keep the page calm. `filtersOpen`
   // flips the panel open; the chip on the toggle button shows how many filters
   // are currently constraining the result set.
@@ -1031,6 +1038,24 @@ function MarketHomeView({ state, setView, onQuick, focusId, wishlist, recent, bl
               Publish
             </button>
           )}
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh marketplace data"
+            style={{
+              background: 'transparent', border: `0.5px solid ${T.glassBorder}`,
+              borderRadius: T.r.sm, padding: '6px 10px', cursor: refreshing ? 'default' : 'pointer',
+              color: T.text3, display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 11, fontFamily: T.fontSans, opacity: refreshing ? 0.6 : 1,
+              transition: 'all .15s',
+            }}
+          >
+            <span style={{
+              display: 'inline-block',
+              animation: refreshing ? 'spin 0.8s linear infinite' : 'none',
+            }}>↻</span>
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
           <Glass style={{ padding: '14px 22px', textAlign: 'right' }}>
             <div style={{ ...TY.micro, color: T.text3, marginBottom: 4 }}>Your balance</div>
             <div style={{ ...TY.numMed, color: T.accentHi }}>{fmt(state.aura)}</div>
