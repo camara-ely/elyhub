@@ -100,6 +100,15 @@ jobs:
       # fails loudly BEFORE tauri-action kicks off the long Rust compile.
       # tauri-action also triggers beforeBuildCommand, but running it here
       # means we see the actual build output in the step log.
+      # Inject the real production config.js (gitignored locally) so the
+      # bundled app connects to the live Worker instead of falling back to
+      # the empty placeholder in config.example.js.
+      - name: Inject production config
+        if: ${{ secrets.PROD_CONFIG_JS != '' }}
+        run: echo "$PROD_CONFIG_JS" > dist/config.js
+        env:
+          PROD_CONFIG_JS: ${{ secrets.PROD_CONFIG_JS }}
+
       - name: Build production frontend
         run: npm run build:frontend
 
