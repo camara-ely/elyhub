@@ -12,7 +12,7 @@
   html, body, #root { margin: 0; padding: 0; min-height: 100%; }
   /* Smooth scroll for anchor jumps and programmatic scrollIntoView. Mouse
      wheel + trackpad are interpolated via JS in app.jsx for a momentum feel. */
-  html { scroll-behavior: smooth; }
+  html { scroll-behavior: auto; }
   body {
     background: #05060A;
     color: #fff;
@@ -25,7 +25,7 @@
      the Shell, modals, drawers). scroll-behavior is inherited but we set it
      explicitly on common scrollable selectors to be safe. */
   main, aside, [class*="scroll"], .no-scrollbar {
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
   }
   input::placeholder { color: rgba(255,255,255,0.38); }
   button { font-family: inherit; }

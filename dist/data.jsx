@@ -378,6 +378,9 @@
         return;
       }
       const snap = await window.ElyAPI.get('/me/poll');
+      // Stamp on every successful round-trip so OfflineBanner doesn't flip
+      // to "Reconnecting…" between polls when member count happens to be 0.
+      window.__lastDataSync = Date.now();
       const memberRows = snap?.members || [];
       const meSnap     = snap?.me      || {};
       const feedRows   = snap?.feed    || [];

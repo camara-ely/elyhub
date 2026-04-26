@@ -573,8 +573,8 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
           );
         })()}
 
-      {/* ───── License status strip — shown when subscribed ───── */}
-      {active && (
+      {/* ───── License status strip — always shown between banner and body ───── */}
+      {active ? (
         <div style={{
           maxWidth: 1100, margin: '-4px auto 22px',
           border: `1px solid rgba(201,162,78,0.55)`,
@@ -651,6 +651,59 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(201,162,78,0.45)'; e.currentTarget.style.background = 'transparent'; }}
             >Manage in library</button>
           </div>
+        </div>
+      ) : (
+        /* ── Not-subscribed strip — same slot, different state ── */
+        <div style={{
+          maxWidth: 1100, margin: '-4px auto 22px',
+          border: `1px solid rgba(150,100,200,0.45)`,
+          borderTop: `1px solid rgba(150,100,200,0.15)`,
+          background: 'linear-gradient(180deg, rgba(20,12,35,0.97), rgba(12,8,22,0.99))',
+          boxShadow: `0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(150,100,200,0.1)`,
+          padding: '14px 24px',
+          display: 'flex', alignItems: 'center', gap: 16,
+          justifyContent: 'space-between',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+            <div style={{
+              fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.28em',
+              textTransform: 'uppercase', color: T.text3, fontWeight: 600,
+            }}>LICENSE</div>
+            <div style={{ width: 1, height: 22, background: 'rgba(150,100,200,0.3)' }}/>
+            <div style={{ fontFamily: ZSERIF, fontSize: 15, color: T.text2, fontWeight: 500 }}>
+              Not subscribed
+            </div>
+            <div style={{ width: 1, height: 22, background: 'rgba(150,100,200,0.3)' }}/>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#888', flexShrink: 0 }}/>
+              <span style={{
+                fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
+                fontWeight: 600, color: T.text3,
+              }}>
+                {fmt(listing.price)} aura / month
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={subscribe}
+            disabled={pending || locked}
+            style={{
+              padding: '9px 22px', borderRadius: T.r.pill, border: 'none',
+              background: locked ? 'rgba(255,255,255,0.06)' : `linear-gradient(135deg, ${T.lilac}, ${T.accentHi})`,
+              color: locked ? T.text3 : '#fff',
+              cursor: pending ? 'progress' : locked ? 'not-allowed' : 'pointer',
+              fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase',
+              fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6,
+              boxShadow: locked ? 'none' : `0 4px 18px ${T.lilac}55`,
+              opacity: pending ? 0.85 : 1, flexShrink: 0,
+            }}
+          >
+            {pending && <Spinner size={11} color="#fff"/>}
+            {pending ? 'Subscribing…'
+              : levelLocked ? `Level ${listing.level} required`
+              : auraShort ? `Need ${fmt(listing.price - state.aura)} more aura`
+              : 'Subscribe'}
+          </button>
         </div>
       )}
 
@@ -923,44 +976,11 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
         </div>
       </div>
 
-      {/* About row — full width when subscribed (license strip is above);
-          2-col with subscribe CTA on the right when not yet active. */}
-      {active ? (
-        <Glass style={{ padding: 22 }}>
-          <div style={{ ...TY.micro, color: T.text3, marginBottom: 10 }}>ABOUT</div>
-          <div style={{ ...TY.body, color: T.text2, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{listing.description}</div>
-        </Glass>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(260px, 1fr)', gap: 18, alignItems: 'start' }}>
-          <Glass style={{ padding: 22 }}>
-            <div style={{ ...TY.micro, color: T.text3, marginBottom: 10 }}>ABOUT</div>
-            <div style={{ ...TY.body, color: T.text2, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{listing.description}</div>
-          </Glass>
-          <Glass style={{ padding: 22 }}>
-            <div style={{ ...TY.micro, color: T.text3, marginBottom: 10 }}>LICENSE</div>
-            <div style={{ ...TY.body, color: T.text, fontWeight: 500 }}>Not subscribed</div>
-            <div style={{ ...TY.small, color: T.text3, marginTop: 6, lineHeight: 1.5 }}>
-              Unlock the full plugin for {fmt(listing.price)} aura per month. Cancel anytime.
-            </div>
-            <button
-              onClick={subscribe}
-              disabled={pending || locked}
-              style={{
-                marginTop: 14, width: '100%', padding: '10px 14px', borderRadius: T.r.pill, border: 'none',
-                background: locked ? 'rgba(255,255,255,0.06)' : `linear-gradient(135deg, ${T.lilac}, ${T.accentHi})`,
-                color: locked ? T.text3 : '#fff',
-                cursor: pending ? 'progress' : locked ? 'not-allowed' : 'pointer',
-                fontFamily: T.fontSans, fontSize: 12, fontWeight: 600,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                opacity: pending ? 0.85 : 1,
-              }}
-            >
-              {pending && <Spinner size={11} color="#fff"/>}
-              {pending ? 'Subscribing…' : 'Subscribe'}
-            </button>
-          </Glass>
-        </div>
-      )}
+      {/* About row — always full width; license is handled by the strip above */}
+      <Glass style={{ padding: 22 }}>
+        <div style={{ ...TY.micro, color: T.text3, marginBottom: 10 }}>ABOUT</div>
+        <div style={{ ...TY.body, color: T.text2, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{listing.description}</div>
+      </Glass>
 
       {/* Cancel-subscription confirmation modal — guards against accidental
           clicks on the destructive button. Plain custom modal because
