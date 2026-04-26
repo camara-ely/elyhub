@@ -688,15 +688,18 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
             onClick={subscribe}
             disabled={pending || locked}
             style={{
-              padding: '9px 22px', borderRadius: T.r.pill, border: 'none',
-              background: locked ? 'rgba(255,255,255,0.06)' : `linear-gradient(135deg, ${T.lilac}, ${T.accentHi})`,
-              color: locked ? T.text3 : '#fff',
+              padding: '9px 22px', borderRadius: T.r.pill,
+              border: `1px solid ${locked ? 'rgba(150,100,200,0.2)' : 'rgba(150,100,200,0.6)'}`,
+              background: locked ? 'rgba(255,255,255,0.04)' : 'rgba(150,100,200,0.15)',
+              color: locked ? T.text3 : T.lilac,
               cursor: pending ? 'progress' : locked ? 'not-allowed' : 'pointer',
               fontFamily: ZCAPS, fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase',
               fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6,
-              boxShadow: locked ? 'none' : `0 4px 18px ${T.lilac}55`,
+              transition: 'all .15s',
               opacity: pending ? 0.85 : 1, flexShrink: 0,
             }}
+            onMouseEnter={(e) => { if (!locked && !pending) { e.currentTarget.style.background = 'rgba(150,100,200,0.28)'; e.currentTarget.style.borderColor = 'rgba(150,100,200,0.85)'; } }}
+            onMouseLeave={(e) => { if (!locked && !pending) { e.currentTarget.style.background = 'rgba(150,100,200,0.15)'; e.currentTarget.style.borderColor = 'rgba(150,100,200,0.6)'; } }}
           >
             {pending && <Spinner size={11} color="#fff"/>}
             {pending ? 'Subscribing…'
