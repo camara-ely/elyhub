@@ -104,8 +104,13 @@ jobs:
       # bundled app connects to the live Worker instead of falling back to
       # the empty placeholder in config.example.js.
       - name: Inject production config
-        if: ${{ secrets.PROD_CONFIG_JS != '' }}
-        run: echo "$PROD_CONFIG_JS" > dist/config.js
+        run: |
+          if [ -n "$PROD_CONFIG_JS" ]; then
+            echo "$PROD_CONFIG_JS" > dist/config.js
+            echo "[release] Production config.js injected."
+          else
+            echo "[release] PROD_CONFIG_JS secret not set — build will use config.example.js fallback."
+          fi
         env:
           PROD_CONFIG_JS: ${{ secrets.PROD_CONFIG_JS }}
 
