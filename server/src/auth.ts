@@ -115,6 +115,27 @@ export async function upsertUser(
     avatar_hash: string | null;
   }>(client, 'SELECT id, username, global_name, avatar_hash FROM users WHERE id = ?', [profile.id]);
   if (!row) throw new Error('upsert_failed');
+
+  // Sync the xp table's display identity so the leaderboard / members view
+  // always shows the current Discord name + avatar immediately on sign-in.
+  // The Discord bot updates xp.display_name via guildMemberUpdate events,
+  // but that fires asynchronously — without this patch the leaderboard shows
+  // the old name until the bot next processes an event for this user.
+  const freshDisplayName = profile.global_name || profile.username;
+  const freshAvatarUrl   = avatarUrl(profile.id, profile.avatar);
+  try {
+    await exec(
+      client,
+      `UPDATE xp SET display_name = ?, avatar_url = ?, updated_at = ?
+       WHERE user_id = ?`,
+      [freshDisplayName, freshAvatarUrl, Math.floor(Date.now() / 1000), profile.id],
+    );
+  } catch {
+    // xp row may not exist yet for brand-new users; the bot creates it on
+    // first XP grant or guild join. Non-fatal — leaderboard just shows bot
+    // data until the row appears.
+  }
+
   const { aura, level } = await getLiveBalance(client, profile.id);
   return {
     id: row.id,
