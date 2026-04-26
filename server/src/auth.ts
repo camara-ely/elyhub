@@ -163,10 +163,30 @@ export function requireAuth() {
   };
 }
 
+// Like requireAuth but never 401s — attaches the session if valid,
+// leaves it null if the header is absent or the token is expired.
+// Use on public endpoints that return richer data when authenticated.
+export function optionalAuth() {
+  return async (c: AppContext, next: Next) => {
+    const header = c.req.header('Authorization') || '';
+    const match = header.match(/^Bearer\s+(.+)$/i);
+    if (match) {
+      const session = await verifySession(c.env, match[1]);
+      if (session) c.set('session', session);
+    }
+    await next();
+  };
+}
+
 // Convenience for inside authed handlers — asserts session is present
 // (which `requireAuth` just guaranteed) and returns the user id.
 export function userId(c: AppContext): string {
   const s = c.var.session;
   if (!s) throw new Error('userId() called on unauthed request');
   return s.sub;
+}
+
+// Nullable version for handlers that accept optional auth.
+export function userIdOptional(c: AppContext): string | null {
+  return c.var.session?.sub ?? null;
 }

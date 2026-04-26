@@ -373,8 +373,10 @@
       // server_meta) with a single JWT-gated round trip. Pre-auth users get
       // an empty snapshot — surface via __liveStatus so the topbar banner
       // can flag "Sign in to sync".
-      if (!window.ElyAPI?.isSignedIn?.() || !window.ElyAPI?.get) {
-        window.__liveStatus = { ready: false, error: 'no-auth', at: Date.now() };
+      // Poll is now public for members/feed/server — no auth needed.
+      // Personal data (spend, trophies) is zeroed server-side when not authed.
+      if (!window.ElyAPI?.get) {
+        window.__liveStatus = { ready: false, error: 'no-api', at: Date.now() };
         return;
       }
       const snap = await window.ElyAPI.get('/me/poll');

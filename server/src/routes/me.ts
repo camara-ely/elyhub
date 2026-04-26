@@ -6,7 +6,7 @@
 
 import { Hono } from 'hono';
 import type { AppContext, Env, PublicUser } from '../types';
-import { requireAuth, userId, avatarUrl, getLiveBalance } from '../auth';
+import { requireAuth, optionalAuth, userId, userIdOptional, avatarUrl, getLiveBalance } from '../auth';
 import { db, exec, now, queryAll, queryOne } from '../db';
 import { adminListLicenses, adminResetDevices, type Actor } from '../lib/kassa-licensing';
 
@@ -390,23 +390,24 @@ meRoutes.get('/op-result/:id', async (c: AppContext) => {
 });
 
 // ──── GET /me/poll ────
-// Consolidated snapshot the client polls every ~5s. Replaces the 5 separate
-// Turso queries data.jsx used to run with a read-write token. One round-trip
-// per tick, all reads scoped server-side.
+// Consolidated snapshot the client polls every ~5s.
+//
+// Public data (members, feed, server) is always returned — no JWT needed.
+// Personal data (me.spend, trophies, claim state) is only populated when
+// the request carries a valid Bearer token. This lets unauthenticated
+// users (or those whose JWT has expired) still see the live leaderboard
+// and aura feed without having to sign in first.
 //
 // Returns:
-//   members  — top 50 leaderboard rows (public)
-//   me       — { spend, totalGiftsSent, totalGiftsReceived, postjobCount,
-//                founderRedeemed } — current user's marketplace spend +
-//                trophy aggregates
-//   feed     — last 30 aura events with from/to display name/avatar joined
-//   server   — { iconUrl, name } from server_meta
-meRoutes.get('/poll', async (c: AppContext) => {
-  const uid = userId(c);
+//   members  — top 50 leaderboard rows (always public)
+//   me       — personal snapshot (zeros when not authed)
+//   feed     — last 30 aura events (always public)
+//   server   — { iconUrl, name } (always public)
+meRoutes.get('/poll', optionalAuth(), async (c: AppContext) => {
+  const uid = userIdOptional(c); // null when not authenticated
   const client = db(c.env);
 
-  // 1) Leaderboard (xp top 50). Public-shaped fields only — same columns
-  //    the previous direct-Turso read pulled.
+  // 1) Leaderboard (xp top 50) — public, no auth needed.
   const members = await queryAll<{
     user_id: string; display_name: string | null; avatar_url: string | null;
     xp: number; level: number; voice_seconds: number;
@@ -421,19 +422,20 @@ meRoutes.get('/poll', async (c: AppContext) => {
      FROM xp ORDER BY xp DESC LIMIT 50`,
   );
 
-  // 2) Marketplace spend for the authed user (subtracted from xp client-side
-  //    to derive live aura).
+  // 2) Marketplace spend — personal, only when authed.
   let spend = 0;
-  try {
-    const spendRow = await queryOne<{ spent: number }>(
-      client,
-      'SELECT COALESCE(SUM(aura_amount), 0) AS spent FROM purchases WHERE user_id = ?',
-      [uid],
-    );
-    spend = Number(spendRow?.spent || 0);
-  } catch { /* purchases table may not exist yet */ }
+  if (uid) {
+    try {
+      const spendRow = await queryOne<{ spent: number }>(
+        client,
+        'SELECT COALESCE(SUM(aura_amount), 0) AS spent FROM purchases WHERE user_id = ?',
+        [uid],
+      );
+      spend = Number(spendRow?.spent || 0);
+    } catch { /* purchases table may not exist yet */ }
+  }
 
-  // 3) Aura feed (last 30 events) with from/to names + avatars joined.
+  // 3) Aura feed (last 30 events) — public.
   let feed: any[] = [];
   try {
     const rows = await queryAll<{
@@ -455,25 +457,27 @@ meRoutes.get('/poll', async (c: AppContext) => {
     feed = rows;
   } catch { /* aura_log table may not exist yet */ }
 
-  // 4) Trophy aggregates for the authed user — single grouped query.
+  // 4) Trophy aggregates — personal, only when authed.
   let trophies = {
     gifts_sent: 0, gifts_received: 0, postjob_count: 0, founder_redeems: 0,
   };
-  try {
-    const row = await queryOne<typeof trophies>(
-      client,
-      `SELECT
-         COALESCE(SUM(CASE WHEN kind='gift'    AND from_user_id = ? THEN amount END), 0) AS gifts_sent,
-         COALESCE(SUM(CASE WHEN kind='gift'    AND to_user_id   = ? THEN amount END), 0) AS gifts_received,
-         COALESCE(SUM(CASE WHEN kind='postjob' AND to_user_id   = ? THEN 1       END), 0) AS postjob_count,
-         COALESCE(SUM(CASE WHEN kind='redeem'  AND to_user_id   = ? AND note LIKE 'r5:%' THEN 1 END), 0) AS founder_redeems
-       FROM aura_log`,
-      [uid, uid, uid, uid],
-    );
-    if (row) trophies = row;
-  } catch { /* aura_log not ready */ }
+  if (uid) {
+    try {
+      const row = await queryOne<typeof trophies>(
+        client,
+        `SELECT
+           COALESCE(SUM(CASE WHEN kind='gift'    AND from_user_id = ? THEN amount END), 0) AS gifts_sent,
+           COALESCE(SUM(CASE WHEN kind='gift'    AND to_user_id   = ? THEN amount END), 0) AS gifts_received,
+           COALESCE(SUM(CASE WHEN kind='postjob' AND to_user_id   = ? THEN 1       END), 0) AS postjob_count,
+           COALESCE(SUM(CASE WHEN kind='redeem'  AND to_user_id   = ? AND note LIKE 'r5:%' THEN 1 END), 0) AS founder_redeems
+         FROM aura_log`,
+        [uid, uid, uid, uid],
+      );
+      if (row) trophies = row;
+    } catch { /* aura_log not ready */ }
+  }
 
-  // 5) Server identity (icon + name).
+  // 5) Server identity — public.
   let serverMeta: { iconUrl: string | null; name: string } = { iconUrl: null, name: 'ElyHub' };
   try {
     const rows = await queryAll<{ key: string; value: string }>(
@@ -486,7 +490,7 @@ meRoutes.get('/poll', async (c: AppContext) => {
   } catch { /* server_meta optional */ }
 
   return c.json({
-    members, // raw rows — client maps to its shape
+    members,
     me: {
       spend,
       totalGiftsSent:     Number(trophies.gifts_sent)     || 0,
