@@ -62,21 +62,29 @@
     }
     const { invoke } = window.__TAURI__.core;
 
-    const redirect = 'http://127.0.0.1:53134/callback';
-    const state = Math.random().toString(36).slice(2);
+    const oauthState = Math.random().toString(36).slice(2);
+
+    // Phase 1 — bind a free port (scans 53134-53200, avoids WSAEADDRINUSE on
+    // Windows when a previous attempt left the port occupied).
+    let port;
+    try {
+      port = await invoke('discord_oauth_start');
+    } catch (e) {
+      console.error('[auth] failed to start OAuth listener:', e);
+      alert('Sign in failed: ' + e);
+      return null;
+    }
+
+    const redirect = `http://127.0.0.1:${port}/callback`;
     const authUrl =
       'https://discord.com/api/oauth2/authorize' +
       `?client_id=${encodeURIComponent(cfg.discordClientId)}` +
       `&redirect_uri=${encodeURIComponent(redirect)}` +
       '&response_type=token' +
       '&scope=identify' +
-      `&state=${state}`;
+      `&state=${oauthState}`;
 
-    // Start the listener FIRST (blocks the Rust thread until callback hits),
-    // then open the browser. The invoke() promise resolves when the callback
-    // delivers the token.
-    const tokenPromise = invoke('discord_oauth_listen');
-
+    // Open browser AFTER the listener is ready.
     try {
       await invoke('open_url', { url: authUrl });
     } catch (e) {
@@ -84,9 +92,10 @@
       window.open(authUrl, '_blank'); // last-ditch fallback
     }
 
+    // Phase 2 — wait for the callback token (up to 5 min).
     let accessToken;
     try {
-      accessToken = await tokenPromise;
+      accessToken = await invoke('discord_oauth_await');
     } catch (e) {
       console.error('[auth] auth flow failed:', e);
       alert('Sign in failed: ' + e);

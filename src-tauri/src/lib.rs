@@ -1,81 +1,36 @@
-// Discord OAuth2 Implicit Grant flow — we spin up a tiny HTTP listener on a
-// fixed localhost port, open the browser to Discord's authorize URL, and
-// wait for the redirect to hit our /callback. The token comes back in the
-// URL fragment (#access_token=...), so the /callback page serves inline JS
-// that extracts the fragment and POSTs it to /token, which we capture here.
+// Discord OAuth2 Implicit Grant flow — two-phase design to avoid Windows
+// port-conflict errors (os error 10048).
 //
-// Implicit flow chosen over Authorization Code + PKCE because Discord still
-// requires client_secret for the token exchange step, and we don't want to
-// embed secrets in the binary. Implicit tokens last 7 days — plenty for a
-// desktop app; user re-auths weekly.
+// Phase 1  discord_oauth_start()  → scans ports 53134-53200, binds the first
+//   free one, spawns the HTTP listener thread, stashes the receiver in app
+//   state, and returns the actual port number to JS so it can build the
+//   redirect_uri dynamically.
+//
+// Phase 2  discord_oauth_await()  → pulls the receiver from state and blocks
+//   up to 5 min for the callback token.
+//
+// JS flow:
+//   const port = await invoke('discord_oauth_start');
+//   // build authUrl with redirect = `http://127.0.0.1:${port}/callback`
+//   await invoke('open_url', { url: authUrl });
+//   const token = await invoke('discord_oauth_await');
+//
+// Splitting the phases means a second sign-in attempt (while the first is
+// still pending or timed out) always gets a fresh port — no WSAEADDRINUSE.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::sync::mpsc::channel;
+use std::sync::{
+    mpsc::{channel, Receiver},
+    Mutex,
+};
 use std::time::Duration;
 
-#[tauri::command]
-async fn discord_oauth_listen() -> Result<String, String> {
-    let (tx, rx) = channel::<Result<String, String>>();
+// Shared state: the receiver half of the channel lives here between the two
+// command calls. Wrapped in Mutex so Tauri's multi-thread runtime is happy.
+struct OAuthWaiter(Mutex<Option<Receiver<Result<String, String>>>>);
 
-    std::thread::spawn(move || {
-        let listener = match TcpListener::bind("127.0.0.1:53134") {
-            Ok(l) => l,
-            Err(e) => {
-                let _ = tx.send(Err(format!("bind failed: {}", e)));
-                return;
-            }
-        };
-        // 5-minute read timeout so the thread can't wedge forever if the user
-        // never completes the flow.
-        listener.set_nonblocking(false).ok();
-
-        for stream_result in listener.incoming() {
-            let mut stream = match stream_result {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-            let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
-
-            let mut buf = [0u8; 4096];
-            let n = stream.read(&mut buf).unwrap_or(0);
-            if n == 0 {
-                continue;
-            }
-            let req = String::from_utf8_lossy(&buf[..n]).to_string();
-            let first_line = req.lines().next().unwrap_or("").to_string();
-
-            if first_line.starts_with("GET /token") {
-                // The inline JS on the /callback page POSTs the fragment back as a query
-                // string so we can read it server-side.
-                let path = first_line.split(' ').nth(1).unwrap_or("");
-                let query = path.split('?').nth(1).unwrap_or("");
-                let mut token: Option<String> = None;
-                let mut err: Option<String> = None;
-                for pair in query.split('&') {
-                    let mut it = pair.splitn(2, '=');
-                    if let (Some(k), Some(v)) = (it.next(), it.next()) {
-                        match k {
-                            "access_token" => token = Some(v.to_string()),
-                            "error" => err = Some(v.to_string()),
-                            _ => {}
-                        }
-                    }
-                }
-                let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nAccess-Control-Allow-Origin: *\r\n\r\nOK";
-                let _ = stream.write_all(resp);
-                let _ = stream.flush();
-
-                if let Some(e) = err {
-                    let _ = tx.send(Err(e));
-                    break;
-                }
-                if let Some(t) = token {
-                    let _ = tx.send(Ok(t));
-                    break;
-                }
-            } else if first_line.starts_with("GET /callback") {
-                let html = r#"<!doctype html>
+const CALLBACK_HTML: &str = r#"<!doctype html>
 <html><head><title>ElyHub — Signed in</title>
 <meta charset="utf-8"/>
 <style>
@@ -114,10 +69,90 @@ async fn discord_oauth_listen() -> Result<String, String> {
   }
 </script>
 </div></body></html>"#;
+
+// Simple percent-decoder for the access_token query param.
+fn pct_decode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(hex) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(hex as char);
+                i += 3;
+                continue;
+            }
+        } else if b[i] == b'+' {
+            out.push(' ');
+            i += 1;
+            continue;
+        }
+        out.push(b[i] as char);
+        i += 1;
+    }
+    out
+}
+
+// Phase 1 — bind a free port, start the listener thread, return port number.
+#[tauri::command]
+fn discord_oauth_start(state: tauri::State<'_, OAuthWaiter>) -> Result<u16, String> {
+    let (tx, rx) = channel::<Result<String, String>>();
+
+    // Scan for a free port so retries don't hit WSAEADDRINUSE.
+    let listener = (53134u16..=53200)
+        .find_map(|p| TcpListener::bind(format!("127.0.0.1:{}", p)).ok())
+        .ok_or_else(|| "all OAuth ports 53134-53200 in use".to_string())?;
+
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+
+    std::thread::spawn(move || {
+        listener.set_nonblocking(false).ok();
+        for stream_result in listener.incoming() {
+            let mut stream = match stream_result {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+
+            let mut buf = [0u8; 8192];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            if n == 0 {
+                continue;
+            }
+            let req = String::from_utf8_lossy(&buf[..n]).to_string();
+            let first_line = req.lines().next().unwrap_or("").to_string();
+
+            if first_line.starts_with("GET /token") {
+                let path = first_line.split(' ').nth(1).unwrap_or("");
+                let query = path.split('?').nth(1).unwrap_or("");
+                let mut token: Option<String> = None;
+                let mut err: Option<String> = None;
+                for pair in query.split('&') {
+                    let mut it = pair.splitn(2, '=');
+                    if let (Some(k), Some(v)) = (it.next(), it.next()) {
+                        match k {
+                            "access_token" => token = Some(pct_decode(v)),
+                            "error" => err = Some(pct_decode(v)),
+                            _ => {}
+                        }
+                    }
+                }
+                let resp = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nAccess-Control-Allow-Origin: *\r\n\r\nOK";
+                let _ = stream.write_all(resp);
+                let _ = stream.flush();
+                if let Some(e) = err {
+                    let _ = tx.send(Err(e));
+                    break;
+                }
+                if let Some(t) = token {
+                    let _ = tx.send(Ok(t));
+                    break;
+                }
+            } else if first_line.starts_with("GET /callback") {
                 let resp = format!(
                     "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n\r\n{}",
-                    html.len(),
-                    html
+                    CALLBACK_HTML.len(),
+                    CALLBACK_HTML
                 );
                 let _ = stream.write_all(resp.as_bytes());
                 let _ = stream.flush();
@@ -129,12 +164,25 @@ async fn discord_oauth_listen() -> Result<String, String> {
         }
     });
 
-    // 5-minute cap on the whole auth flow. If the user abandons the browser
-    // window we'll eventually time out instead of leaking the listener forever.
+    // Stash receiver — discord_oauth_await will pick it up.
+    *state.0.lock().map_err(|e| e.to_string())? = Some(rx);
+    Ok(port)
+}
+
+// Phase 2 — block until the callback delivers a token (or 5-min timeout).
+#[tauri::command]
+fn discord_oauth_await(state: tauri::State<'_, OAuthWaiter>) -> Result<String, String> {
+    let rx = state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .take()
+        .ok_or_else(|| "no pending OAuth flow — call discord_oauth_start first".to_string())?;
+
     match rx.recv_timeout(Duration::from_secs(300)) {
         Ok(Ok(t)) => Ok(t),
         Ok(Err(e)) => Err(e),
-        Err(_) => Err("timed out waiting for authorization".to_string()),
+        Err(_) => Err("timed out waiting for Discord authorization".to_string()),
     }
 }
 
@@ -295,11 +343,13 @@ fn open_url(url: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(OAuthWaiter(Mutex::new(None)))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            discord_oauth_listen,
+            discord_oauth_start,
+            discord_oauth_await,
             open_url,
             open_path,
             reveal_in_finder,
