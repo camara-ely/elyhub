@@ -110,7 +110,9 @@ fn discord_oauth_start(state: tauri::State<'_, OAuthWaiter>) -> Result<u16, Stri
         let mut tx_opt = Some(tx);
         listener.set_nonblocking(false).ok();
         for stream_result in listener.incoming() {
-            if tx_opt.is_none() { break; } // already sent — stop accepting
+            if tx_opt.is_none() {
+                break;
+            } // already sent — stop accepting
             let mut stream = match stream_result {
                 Ok(s) => s,
                 Err(_) => continue,
@@ -119,7 +121,9 @@ fn discord_oauth_start(state: tauri::State<'_, OAuthWaiter>) -> Result<u16, Stri
 
             let mut buf = [0u8; 8192];
             let n = stream.read(&mut buf).unwrap_or(0);
-            if n == 0 { continue; }
+            if n == 0 {
+                continue;
+            }
             let req = String::from_utf8_lossy(&buf[..n]).to_string();
             let first_line = req.lines().next().unwrap_or("").to_string();
 
@@ -142,11 +146,15 @@ fn discord_oauth_start(state: tauri::State<'_, OAuthWaiter>) -> Result<u16, Stri
                 let _ = stream.write_all(resp);
                 let _ = stream.flush();
                 if let Some(e) = err {
-                    if let Some(t) = tx_opt.take() { let _ = t.send(Err(e)); }
+                    if let Some(t) = tx_opt.take() {
+                        let _ = t.send(Err(e));
+                    }
                     break;
                 }
                 if let Some(tok) = token {
-                    if let Some(t) = tx_opt.take() { let _ = t.send(Ok(tok)); }
+                    if let Some(t) = tx_opt.take() {
+                        let _ = t.send(Ok(tok));
+                    }
                     break;
                 }
             } else if first_line.starts_with("GET /callback") {
@@ -183,7 +191,7 @@ async fn discord_oauth_await(state: tauri::State<'_, OAuthWaiter>) -> Result<Str
         .ok_or_else(|| "no pending OAuth flow — call discord_oauth_start first".to_string())?;
 
     match tokio::time::timeout(Duration::from_secs(300), rx).await {
-        Ok(Ok(result)) => result,  // result is Result<String, String>
+        Ok(Ok(result)) => result, // result is Result<String, String>
         Ok(Err(_)) => Err("OAuth channel closed unexpectedly".to_string()),
         Err(_) => Err("timed out waiting for Discord authorization".to_string()),
     }
