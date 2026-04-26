@@ -28,9 +28,7 @@ async fn discord_oauth_listen() -> Result<String, String> {
         };
         // 5-minute read timeout so the thread can't wedge forever if the user
         // never completes the flow.
-        listener
-            .set_nonblocking(false)
-            .ok();
+        listener.set_nonblocking(false).ok();
 
         for stream_result in listener.incoming() {
             let mut stream = match stream_result {
@@ -212,7 +210,9 @@ async fn pick_directory(default_path: Option<String>) -> Option<String> {
             d = d.set_directory(p);
         }
     }
-    d.pick_folder().await.map(|h| h.path().to_string_lossy().to_string())
+    d.pick_folder()
+        .await
+        .map(|h| h.path().to_string_lossy().to_string())
 }
 
 // Launch a separate `.app` bundle on macOS by name (e.g. "Hugin"). Falls back
