@@ -346,10 +346,12 @@ fn open_url(url: String) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        // explorer.exe opens URLs via ShellExecute — no cmd.exe involved so
-        // & in the URL is never interpreted as a shell operator.
-        std::process::Command::new("explorer")
-            .arg(&url)
+        // rundll32 url.dll,FileProtocolHandler is the canonical Windows API for
+        // opening a URL in the default browser — no shell parsing, no file manager.
+        // explorer.exe would open Windows Explorer; cmd /C start parses & as a
+        // command separator. rundll32 routes directly to ShellExecute.
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &url])
             .spawn()
             .map(|_| ())
             .map_err(|e| e.to_string())
