@@ -13,45 +13,58 @@
 //   • WelcomeModal + wasWelcomed/markWelcomed — post-login splash
 
 // ──── ResetSubscriptionButton — dev/owner-only reset for Hugin subscription ────
-// Visible only to admin IDs 264327419027128320 and 462672954585776131.
-// Wipes purchases + library + license_keys rows so the owner can re-test
-// the subscription flow from scratch without touching the Kassa dashboard.
-function ResetSubscriptionButton({ listingIds }) {
-  const [busy, setBusy] = React.useState(false);
-  const reset = async () => {
-    if (busy) return;
-    if (!window.confirm('Reset your Hugin subscription? This wipes your local purchase records so you appear unsubscribed. Aura is refunded.')) return;
-    setBusy(true);
+// Shown ONLY when window.ME.id is in the owner list (checked at render site).
+// Uses a two-step confirm (no window.confirm — blocked by WKWebView in Tauri).
+// First click → button turns red "Confirm?". Second click → executes reset.
+// Clicking anywhere else (blur/mouseleave while in confirm state) cancels.
+function ResetSubscriptionButton() {
+  const [stage, setStage] = React.useState('idle'); // 'idle' | 'confirm' | 'busy'
+  const timerRef = React.useRef(null);
+
+  const clearTimer = () => { if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; } };
+
+  const handleClick = async () => {
+    if (stage === 'busy') return;
+    if (stage === 'idle') {
+      setStage('confirm');
+      // Auto-cancel confirm after 3s if user doesn't click again.
+      clearTimer();
+      timerRef.current = setTimeout(() => setStage('idle'), 3000);
+      return;
+    }
+    // stage === 'confirm' → execute
+    clearTimer();
+    setStage('busy');
     try {
-      const res = await window.ElyAPI?.post('/me/subscriptions/gleipnir/reset', {});
-      if (res?.ok) {
-        try { ElyNotify?.toast?.({ text: 'Subscription reset — reloading…', kind: 'success' }); } catch {}
-        setTimeout(() => location.reload(), 900);
-      } else {
-        try { ElyNotify?.toast?.({ text: `Reset failed: ${res?.error || 'unknown'}`, kind: 'warn' }); } catch {}
-      }
+      await window.ElyAPI?.post('/me/subscriptions/gleipnir/reset', {});
+      try { ElyNotify?.toast?.({ text: 'Subscription reset — reloading…', kind: 'success' }); } catch {}
+      setTimeout(() => location.reload(), 900);
     } catch (err) {
-      try { ElyNotify?.toast?.({ text: `Reset error: ${err?.message || err}`, kind: 'warn' }); } catch {}
-    } finally {
-      setBusy(false);
+      try { ElyNotify?.toast?.({ text: `Reset failed: ${err?.message || err}`, kind: 'warn' }); } catch {}
+      setStage('idle');
     }
   };
+
+  React.useEffect(() => () => clearTimer(), []);
+
+  const isConfirm = stage === 'confirm';
+  const isBusy    = stage === 'busy';
   return (
     <button
-      onClick={reset}
-      disabled={busy}
+      onClick={handleClick}
+      disabled={isBusy}
       title="Dev only — reset subscription to unsubscribed state"
       style={{
-        padding: '8px 14px', background: 'transparent',
-        border: '1px solid rgba(255,200,50,0.45)',
-        color: '#f5c451', cursor: busy ? 'progress' : 'pointer',
+        padding: '8px 14px', background: isConfirm ? 'rgba(239,107,124,0.15)' : 'transparent',
+        border: `1px solid ${isConfirm ? 'rgba(239,107,124,0.8)' : 'rgba(255,200,50,0.45)'}`,
+        color: isConfirm ? '#f4849a' : '#f5c451',
+        cursor: isBusy ? 'progress' : 'pointer',
         fontFamily: '"Cinzel","Cormorant SC",serif', fontSize: 10,
         letterSpacing: '0.18em', textTransform: 'uppercase',
-        fontWeight: 600, transition: 'all .15s', opacity: busy ? 0.6 : 1,
+        fontWeight: 600, transition: 'all .2s', opacity: isBusy ? 0.5 : 1,
+        flexShrink: 0,
       }}
-      onMouseEnter={(e) => { if (!busy) { e.currentTarget.style.borderColor = 'rgba(255,200,50,0.85)'; e.currentTarget.style.background = 'rgba(255,200,50,0.1)'; } }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(255,200,50,0.45)'; e.currentTarget.style.background = 'transparent'; }}
-    >{busy ? '…' : '⚙ Reset sub'}</button>
+    >{isBusy ? '…' : isConfirm ? 'Confirm?' : '⚙ Reset sub'}</button>
   );
 }
 
@@ -690,7 +703,7 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
               >Cancel subscription</button>
             )}
             {['264327419027128320', '462672954585776131'].includes(window.ME?.id) && (
-              <ResetSubscriptionButton listingIds={tiers.map((t) => t.id)} />
+              <ResetSubscriptionButton />
             )}
             <button
               onClick={() => setView({ id: 'library' })}
