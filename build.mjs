@@ -200,6 +200,18 @@ async function main() {
   await rmrf(DEST);
   await ensureDir(DEST);
 
+  // In CI the real config.js is gitignored. Fall back to config.example.js so
+  // the build can run without secrets — the placeholder values are safe to ship
+  // in test artifacts; real deployments always supply their own config.js.
+  const configJs      = path.join(SRC, 'config.js');
+  const configExample = path.join(SRC, 'config.example.js');
+  try { await fs.access(configJs); } catch {
+    try {
+      await fs.copyFile(configExample, configJs);
+      console.log('[build] config.js missing — using config.example.js as fallback');
+    } catch { /* no example either — skip */ }
+  }
+
   const files = await walk(SRC);
   let jsxCount = 0, copyCount = 0, htmlCount = 0;
 
