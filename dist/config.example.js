@@ -19,5 +19,5 @@ window.ELYHUB_CONFIG = {
   // ElyHub backend URL. Dev = http://localhost:8787. Prod = the deployed
   // Workers URL. Used by dist/api.jsx for auth + marketplace endpoints
   // and by dist/data.jsx for the consolidated /me/poll snapshot.
-  apiUrl: 'https://elyhub-api-prod.YOUR-SUBDOMAIN.workers.dev',
+  apiUrl: '',  // paste your deployed Workers URL here, e.g. https://elyhub-api.example.workers.dev
 };

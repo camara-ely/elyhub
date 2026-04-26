@@ -14,8 +14,9 @@
   // Bail out if there's no apiUrl — without it ElyAPI can't talk to the
   // Worker. Mock data from tokens.jsx stays visible. Surfaced via
   // __liveStatus so the OfflineBanner / smoke tests see we ran.
-  if (!cfg.apiUrl) {
-    console.warn('[data] ELYHUB_CONFIG.apiUrl missing — running with mock data. Copy config.example.js to config.js and fill in real values.');
+  const isPlaceholder = !cfg.apiUrl || cfg.apiUrl.includes('YOUR-SUBDOMAIN') || cfg.apiUrl.trim() === '';
+  if (isPlaceholder) {
+    console.warn('[data] ELYHUB_CONFIG.apiUrl missing or placeholder — running with mock data. Copy config.example.js to config.js and fill in real values.');
     window.__liveStatus = { ready: false, error: 'no-config' };
     return;
   }
