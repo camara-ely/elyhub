@@ -104,25 +104,21 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS code-signing + notarization. Skipped (unsigned build) if
-          # any of these are missing — Gatekeeper will warn but the app still
-          # runs. See RELEASE.md for how to provision the cert.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows Authenticode. Skipped (SmartScreen warning, but installs)
-          # if missing. Cert can be ev or standard; thumbprint is matched
-          # against the local Windows cert store on the runner.
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          # Tauri auto-updater signing. Required so users actually get OTA
-          # updates — without these the bundler skips manifest generation
-          # and the updater plugin will fail to verify any future release.
+          # Tauri auto-updater signing — generated via `npx tauri signer generate`.
+          # Both secrets must exist in the repo for OTA updates to work.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # ── Code-signing ──────────────────────────────────────────────────
+          # macOS / Windows signing env vars are intentionally OMITTED here.
+          # tauri-action interprets ANY value (including "") as "try to sign"
+          # and fails when no real cert is present. Unsigned builds work fine
+          # for dev distribution — Gatekeeper warns, but the app installs.
+          #
+          # To enable signing later, add these secrets to the repo and
+          # uncomment the lines below:
+          #   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD (base64 .p12)
+          #   APPLE_SIGNING_IDENTITY / APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID
+          #   WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD (base64 .pfx)
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'ElyHub ${{ github.ref_name }}'
