@@ -7,12 +7,18 @@
 
 (() => {
   const cfg = window.ELYHUB_CONFIG || {};
-  // Live data now flows through the Worker (`ElyAPI`). The legacy direct-
-  // Turso path required `tursoUrl` + `tursoToken` in client config; both
-  // are no-ops now. We keep `cfg` around for the small set of *display*
-  // settings still read here (meUserId pin, pollInterval).
-  // The poll loop below also needs an authenticated user — pre-auth users
-  // get the empty snapshot path (early return inside fetchOnce).
+  // Live data flows through the Worker (`ElyAPI`). The legacy direct-Turso
+  // path required `tursoUrl` + `tursoToken`; both are no-ops now. We keep
+  // `cfg` around for display settings (meUserId pin, pollInterval, apiUrl).
+  //
+  // Bail out if there's no apiUrl — without it ElyAPI can't talk to the
+  // Worker. Mock data from tokens.jsx stays visible. Surfaced via
+  // __liveStatus so the OfflineBanner / smoke tests see we ran.
+  if (!cfg.apiUrl) {
+    console.warn('[data] ELYHUB_CONFIG.apiUrl missing — running with mock data. Copy config.example.js to config.js and fill in real values.');
+    window.__liveStatus = { ready: false, error: 'no-config' };
+    return;
+  }
 
   // Subscription plumbing — React components call subscribe(forceUpdate) in an
   // effect; we call all subscribers whenever MEMBERS/ME change.
@@ -364,8 +370,10 @@
       // Server-side consolidated poll. Replaces five separate Turso queries
       // (xp leaderboard, purchases spend, aura_log feed, trophy aggregates,
       // server_meta) with a single JWT-gated round trip. Pre-auth users get
-      // an empty snapshot — handled by the early return below.
+      // an empty snapshot — surface via __liveStatus so the topbar banner
+      // can flag "Sign in to sync".
       if (!window.ElyAPI?.isSignedIn?.() || !window.ElyAPI?.get) {
+        window.__liveStatus = { ready: false, error: 'no-auth', at: Date.now() };
         return;
       }
       const snap = await window.ElyAPI.get('/me/poll');
