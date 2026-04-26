@@ -60,6 +60,31 @@
 
   let session = readSession();
 
+  // Auto-exchange on boot: if we have a Discord token but no backend JWT,
+  // try to get one silently. Fires after 800ms so ELYHUB_CONFIG is loaded.
+  // This heals "Discord-only" sessions where exchangeDiscord failed at sign-in.
+  if (!session) {
+    setTimeout(async () => {
+      try {
+        const authRaw = localStorage.getItem('elyhub.auth.v1');
+        if (!authRaw) return;
+        const authData = JSON.parse(authRaw);
+        if (!authData?.token || (authData.expiresAt && authData.expiresAt < Date.now())) return;
+        const base = getBase();
+        const res = await fetch(`${base}/auth/discord/exchange`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: authData.token }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          session = { token: data.token, expires_at: data.expires_at, user: data.user };
+          writeSession(session);
+        }
+      } catch {}
+    }, 800);
+  }
+
   // Retry policy mirrors dist/data.jsx — transient (5xx, 429, network) get
   // exponential backoff; 4xx fail fast (the body of a 401 won't improve on
   // retry). Three attempts max so we don't tie up the UI on a long outage.
@@ -128,6 +153,33 @@
     post: (path, body) => request('POST', path, body),
     put: (path, body) => request('PUT', path, body),
     del: (path) => request('DELETE', path),
+
+    // Ensure there is a valid backend JWT. If one already exists (and isn't
+    // expired), this is a no-op. If it's missing, we try to re-exchange the
+    // stored Discord access_token silently. Useful for owners who are in
+    // "Discord-only" mode because exchangeDiscord failed at sign-in.
+    async ensureSession() {
+      if (session?.token) return true;
+      try {
+        const authRaw = localStorage.getItem('elyhub.auth.v1');
+        if (!authRaw) return false;
+        const authData = JSON.parse(authRaw);
+        if (!authData?.token || (authData.expiresAt && authData.expiresAt < Date.now())) return false;
+        const base = getBase();
+        const res = await fetch(`${base}/auth/discord/exchange`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: authData.token }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          session = { token: data.token, expires_at: data.expires_at, user: data.user };
+          writeSession(session);
+          return true;
+        }
+      } catch {}
+      return false;
+    },
 
     // Called by dist/auth.jsx after a successful Discord OAuth. Exchanges
     // the Discord access_token for a backend JWT + stores it. Returns the

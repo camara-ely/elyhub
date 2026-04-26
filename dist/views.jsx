@@ -36,6 +36,10 @@ function ResetSubscriptionButton() {
     clearTimer();
     setStage('busy');
     try {
+      // Ensure we have a backend JWT before calling the reset endpoint.
+      // Owners may be in "Discord-only" mode if exchangeDiscord failed at
+      // sign-in; ensureSession re-exchanges silently so the call goes through.
+      await window.ElyAPI?.ensureSession?.();
       await window.ElyAPI?.post('/me/subscriptions/gleipnir/reset', {});
       // Clear client-side library entries for gleipnir so the UI reflects
       // the reset immediately on reload (server cleared the DB, we clear localStorage).
@@ -1838,7 +1842,7 @@ function MessagesView({ state, setView, messages, threadId, blocks, reports }) {
           </div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
             <button
-              onClick={() => setView({ id: 'leaderboard' })}
+              onClick={() => setView({ id: 'members' })}
               style={{
                 padding: '9px 18px', borderRadius: T.r.pill, border: 'none',
                 background: `linear-gradient(135deg, ${T.accentHi}, ${T.accent})`,
