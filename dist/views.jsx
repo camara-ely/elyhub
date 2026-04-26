@@ -2010,20 +2010,52 @@ function MembersView({ state, setView, messages }) {
   React.useEffect(() => { setOffset(0); }, [sort, debouncedSearch]);
 
   const load = React.useCallback(async (append = false) => {
-    if (!window.ElyAPI?.isSignedIn?.()) return;
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        sort, limit: String(PAGE), offset: String(offset),
-      });
-      if (debouncedSearch) params.set('search', debouncedSearch);
-      const res = await window.ElyAPI.get(`/members?${params}`);
-      setItems((prev) => append ? [...prev, ...(res.items || [])] : (res.items || []));
-      setTotal(res.total || 0);
-      setError(null);
+      // Prefer the authenticated /members endpoint (supports sort+search+paging).
+      // Fall back to window.MEMBERS (kept live by the /me/poll) when the user
+      // isn't signed in or the JWT has expired — so the directory still shows
+      // real guild data rather than a blank "No members yet" empty state.
+      if (window.ElyAPI?.isSignedIn?.()) {
+        const params = new URLSearchParams({
+          sort, limit: String(PAGE), offset: String(offset),
+        });
+        if (debouncedSearch) params.set('search', debouncedSearch);
+        const res = await window.ElyAPI.get(`/members?${params}`);
+        setItems((prev) => append ? [...prev, ...(res.items || [])] : (res.items || []));
+        setTotal(res.total || 0);
+        setError(null);
+      } else {
+        // Unauthenticated fallback — shape window.MEMBERS to match the /members schema.
+        const pool = Array.isArray(window.MEMBERS) ? window.MEMBERS : [];
+        let sorted = [...pool];
+        if (sort === 'aura') sorted.sort((a, b) => (b.aura || 0) - (a.aura || 0));
+        else if (sort === 'name') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        const filtered = debouncedSearch
+          ? sorted.filter((m) => (m.name || '').toLowerCase().startsWith(debouncedSearch.toLowerCase()))
+          : sorted;
+        setItems(filtered.map((m) => ({
+          id: m.id, name: m.name, avatar_url: m.avatar || null,
+          aura: m.aura || 0, level: m.level || 0, roles: m.discordRoles || [],
+          joined_at: null, last_active_at: null,
+        })));
+        setTotal(filtered.length);
+        setError(null);
+      }
     } catch (err) {
       console.warn('[members] load failed:', err.message);
-      setError(err.message || 'load failed');
+      // On failure, try the local MEMBERS pool rather than going blank.
+      const pool = Array.isArray(window.MEMBERS) ? window.MEMBERS : [];
+      if (pool.length > 0 && !append) {
+        setItems(pool.map((m) => ({
+          id: m.id, name: m.name, avatar_url: m.avatar || null,
+          aura: m.aura || 0, level: m.level || 0, roles: m.discordRoles || [],
+          joined_at: null, last_active_at: null,
+        })));
+        setTotal(pool.length);
+      } else {
+        setError(err.message || 'load failed');
+      }
     } finally {
       setLoading(false);
     }
