@@ -104,6 +104,7 @@ jobs:
       # bundled app connects to the live Worker instead of falling back to
       # the empty placeholder in config.example.js.
       - name: Inject production config
+        shell: bash
         run: |
           if [ -n "$PROD_CONFIG_JS" ]; then
             echo "$PROD_CONFIG_JS" > dist/config.js
