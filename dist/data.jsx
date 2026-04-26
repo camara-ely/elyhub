@@ -6,12 +6,13 @@
 // and the app keeps showing the mock data defined in tokens.jsx.
 
 (() => {
-  const cfg = window.ELYHUB_CONFIG;
-  if (!cfg || !cfg.tursoUrl || !cfg.tursoToken || cfg.tursoUrl.includes('YOUR-DB-NAME')) {
-    console.warn('[data] ELYHUB_CONFIG missing or placeholder — running with mock data. Copy config.example.js to config.js and fill in real values.');
-    window.__liveStatus = { ready: false, error: 'no-config' };
-    return;
-  }
+  const cfg = window.ELYHUB_CONFIG || {};
+  // Live data now flows through the Worker (`ElyAPI`). The legacy direct-
+  // Turso path required `tursoUrl` + `tursoToken` in client config; both
+  // are no-ops now. We keep `cfg` around for the small set of *display*
+  // settings still read here (meUserId pin, pollInterval).
+  // The poll loop below also needs an authenticated user — pre-auth users
+  // get the empty snapshot path (early return inside fetchOnce).
 
   // Subscription plumbing — React components call subscribe(forceUpdate) in an
   // effect; we call all subscribers whenever MEMBERS/ME change.
@@ -31,11 +32,105 @@
   let resolveInitial;
   window.__initialDataReady = new Promise((res) => { resolveInitial = res; });
 
-  // Talk to Turso's HTTP pipeline API directly — avoids pulling in the
-  // @libsql/client npm package (which uses `require` internally and blows
-  // up in the Tauri webview). Spec:
-  //   https://github.com/tursodatabase/libsql/blob/main/docs/HTTP_V2_SPEC.md
-  const httpBase = cfg.tursoUrl.replace(/^libsql:\/\//, 'https://').replace(/\/$/, '');
+  // One-shot legacy-state cleanup — `ely.mockSpent:*` was a per-user aura
+  // debit counter used while the catalog was seed-only. Now that purchases
+  // hit the backend exclusively, any lingering counter would double-debit.
+  // Drop them on boot. Safe to run every load; keys re-created by nothing.
+  try {
+    const kill = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('ely.mockSpent:')) kill.push(k);
+    }
+    for (const k of kill) localStorage.removeItem(k);
+  } catch {}
+
+  // Legacy mock-catalog residue cleanup.
+  //
+  // Early testers bought/saved/followed against the 16 seed listings + 11
+  // fake members. When we dropped the seeds (task I), the backing listings
+  // disappeared but localStorage still held references — so "My Library"
+  // showed 9 purchased mocks that don't exist anymore, the wishlist had
+  // dead ids, follows pointed to fake users, etc.
+  //
+  // We detect mock references by id shape:
+  //   • mock listing ids → `l-*` prefix (e.g. l-zephyro)
+  //   • mock user ids    → `u\d+` or `me` or `seed-*`
+  // Backend ids are UUIDs — they can't match either pattern, so this is safe
+  // to run every boot. Idempotent: once purged, the filters find nothing.
+  try {
+    // Dev-stub IDs (e.g. `l-hugin-dev` for the Zodiac unlock test) start with
+     // `l-` but are intentional — exempt them from the cleanup so they survive
+     // reloads. Production listings are UUIDs anyway, so this only carves out
+     // the explicit dev-test ids.
+     const DEV_STUB_LID = (id) => id === 'l-hugin-dev';
+     const MOCK_LID = (id) => typeof id === 'string' && id.startsWith('l-') && !DEV_STUB_LID(id);
+    const MOCK_UID = (id) => typeof id === 'string' && /^(u\d+|me|seed-.*)$/.test(id);
+
+    // library: array of { listingId, ... }
+    const lib = JSON.parse(localStorage.getItem('elyhub.library.v1') || 'null');
+    if (Array.isArray(lib)) {
+      const clean = lib.filter((it) => !MOCK_LID(it?.listingId));
+      if (clean.length !== lib.length) {
+        localStorage.setItem('elyhub.library.v1', JSON.stringify(clean));
+        console.log(`[data] cleanup: dropped ${lib.length - clean.length} mock library entr(ies)`);
+      }
+    }
+
+    // wishlist: array of listing ids (strings)
+    const wish = JSON.parse(localStorage.getItem('elyhub.wishlist.v1') || 'null');
+    if (Array.isArray(wish)) {
+      const clean = wish.filter((id) => !MOCK_LID(id));
+      if (clean.length !== wish.length) {
+        localStorage.setItem('elyhub.wishlist.v1', JSON.stringify(clean));
+        console.log(`[data] cleanup: dropped ${wish.length - clean.length} mock wishlist entr(ies)`);
+      }
+    }
+
+    // follows: array of user ids (strings)
+    const follows = JSON.parse(localStorage.getItem('elyhub.follows.v1') || 'null');
+    if (Array.isArray(follows)) {
+      const clean = follows.filter((id) => !MOCK_UID(id));
+      if (clean.length !== follows.length) {
+        localStorage.setItem('elyhub.follows.v1', JSON.stringify(clean));
+        console.log(`[data] cleanup: dropped ${follows.length - clean.length} mock follow(s)`);
+      }
+    }
+
+    // recently viewed: array of { id, ts }
+    const recent = JSON.parse(localStorage.getItem('elyhub.recent.v1') || 'null');
+    if (Array.isArray(recent)) {
+      const clean = recent.filter((r) => !MOCK_LID(r?.id));
+      if (clean.length !== recent.length) {
+        localStorage.setItem('elyhub.recent.v1', JSON.stringify(clean));
+        console.log(`[data] cleanup: dropped ${recent.length - clean.length} mock recent entr(ies)`);
+      }
+    }
+
+    // coupons: object keyed by code, each has { sellerId, listingId, seed }.
+    // Drop any whose sellerId or listingId is mock, or that was seeded.
+    const coupons = JSON.parse(localStorage.getItem('elyhub.coupons.v1') || 'null');
+    if (coupons && typeof coupons === 'object') {
+      let dropped = 0;
+      const clean = {};
+      for (const [code, c] of Object.entries(coupons)) {
+        if (c?.seed || MOCK_UID(c?.sellerId) || MOCK_LID(c?.listingId)) { dropped++; continue; }
+        clean[code] = c;
+      }
+      if (dropped > 0) {
+        localStorage.setItem('elyhub.coupons.v1', JSON.stringify(clean));
+        console.log(`[data] cleanup: dropped ${dropped} mock coupon(s)`);
+      }
+    }
+  } catch (err) {
+    console.warn('[data] legacy cleanup failed:', err?.message || err);
+  }
+
+  // (The direct Turso pipeline call lived here. Removed in the security
+  // refactor — all reads/writes now go through the Worker. The functions
+  // below are kept as no-op stubs so any leftover callers fail loudly via
+  // the explicit throw rather than the IIFE crashing on boot.)
+  const httpBase = null;
 
   // Encode a JS value into the pipeline's typed arg shape.
   function encodeArg(v) {
@@ -73,46 +168,8 @@
   // { sql, args }. Returns { rows } where each row is a plain object keyed by
   // column name (cells are unwrapped to JS values; integers stay strings to
   // avoid precision loss — callers Number() them explicitly).
-  async function tursoExecute(stmt) {
-    const { sql, args = null } =
-      typeof stmt === 'string' ? { sql: stmt, args: null } : stmt;
-    const payload = args ? { sql, args: args.map(encodeArg) } : { sql };
-    return withRetry(async () => {
-      const res = await fetch(`${httpBase}/v2/pipeline`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${cfg.tursoToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          requests: [
-            { type: 'execute', stmt: payload },
-            { type: 'close' },
-          ],
-        }),
-      });
-      if (!res.ok) throw new Error(`turso http ${res.status}: ${await res.text()}`);
-      const body = await res.json();
-      const result = body.results?.[0];
-      if (!result || result.type === 'error') {
-        throw new Error(result?.error?.message || 'turso pipeline error');
-      }
-      const r = result.response?.result;
-      if (!r) throw new Error('turso: malformed response');
-      // Each cell is { type: 'integer'|'float'|'text'|'null'|'blob', value }.
-      const colNames = r.cols.map((c) => c.name);
-      const unwrap = (cell) => {
-        if (!cell || cell.type === 'null') return null;
-        return cell.value;
-      };
-      return {
-        rows: r.rows.map((row) => {
-          const obj = {};
-          row.forEach((cell, i) => { obj[colNames[i]] = unwrap(cell); });
-          return obj;
-        }),
-      };
-    });
+  async function tursoExecute() {
+    throw new Error('tursoExecute removed — call ElyAPI instead');
   }
 
   function deriveTag(name, id) {
@@ -129,43 +186,53 @@
   // Poll a specific op's result column. Used to surface bot-side errors
   // (e.g. "failed:not_boosting") back in the UI instead of the action
   // silently no-op'ing.
+  // Polls the Worker (which scopes the lookup to the authed user — the
+  // client can't probe other users' op outcomes). Returns the bot's result
+  // string, or null on timeout.
   async function waitForOpResult(id, { timeoutMs = 15000, pollMs = 1500 } = {}) {
+    if (!window.ElyAPI?.get) return null;
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       await new Promise((res) => setTimeout(res, pollMs));
       try {
-        const r = await tursoExecute({
-          sql: `SELECT result FROM pending_ops WHERE id = ? AND applied_at IS NOT NULL`,
-          args: [id],
-        });
-        const row = r?.rows?.[0];
-        if (row) return row.result ?? null;
+        const r = await window.ElyAPI.get(`/me/op-result/${encodeURIComponent(id)}`);
+        if (r && r.applied_at) {
+          // Bot's worker writes status='ok' or 'error' + error text. Mirror
+          // the previous shape: return the error string on failure, null on ok.
+          if (r.status === 'error') return r.error ? `failed:${r.error}` : 'failed';
+          return null;
+        }
       } catch (err) {
-        console.warn('[data] waitForOpResult poll failed:', err.message);
+        // 404 = op not found yet (race); keep polling.
+        if (!String(err?.message || '').includes('404')) {
+          console.warn('[data] waitForOpResult poll failed:', err.message);
+        }
       }
     }
-    return null; // timeout — assume pending
+    return null;
   }
 
   // Low-level: insert an op, optionally await its processed result. Returns
   // { id, result }. `result` is null if we didn't wait or timed out.
+  //
+  // Routed through the Worker (POST /me/enqueue-op) so writes are JWT-gated
+  // and validated server-side. The previous direct-Turso path used the
+  // bundled read-write token, which any installed user could extract from
+  // the bundle and use to forge ops as anyone. Now the server enforces
+  // from_user_id === authed user.
   async function enqueueOp(row, { await: awaitResult = false } = {}) {
-    await ensureSchema();
-    const id = uuid();
-    await tursoExecute({
-      sql: `INSERT INTO pending_ops
-              (id, kind, from_user_id, to_user_id, amount, note, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      args: [
-        id,
-        row.kind,
-        row.fromUserId,
-        row.toUserId || null,
-        row.amount == null ? null : row.amount,
-        row.note || null,
-        Math.floor(Date.now() / 1000),
-      ],
+    if (!window.ElyAPI?.isSignedIn?.() || !window.ElyAPI?.post) {
+      throw new Error('not_signed_in');
+    }
+    const res = await window.ElyAPI.post('/me/enqueue-op', {
+      kind: row.kind,
+      // from_user_id is set by the server from the JWT — body field ignored.
+      toUserId: row.toUserId || null,
+      amount: row.amount == null ? null : row.amount,
+      note: row.note || null,
     });
+    const id = res?.id;
+    if (!id) throw new Error('enqueue_failed');
     // Kick a refresh so MEMBERS/ME update once the bot applies.
     setTimeout(fetchOnce, 6000);
     setTimeout(fetchOnce, 12000);
@@ -288,49 +355,26 @@
     },
   };
 
-  // Ensure the pending_ops table exists before we try to write to it. The
-  // bot's initTurso() creates this too, but when we've shipped app changes
-  // ahead of a bot redeploy the app would fail with "no such table" — so we
-  // run the CREATE defensively. Safe to do every boot (IF NOT EXISTS).
-  let schemaReady = null;
-  function ensureSchema() {
-    if (!schemaReady) {
-      schemaReady = tursoExecute(`
-        CREATE TABLE IF NOT EXISTS pending_ops (
-          id TEXT PRIMARY KEY,
-          kind TEXT NOT NULL,
-          from_user_id TEXT NOT NULL,
-          to_user_id TEXT,
-          amount INTEGER,
-          note TEXT,
-          created_at INTEGER NOT NULL,
-          applied_at INTEGER,
-          result TEXT
-        )
-      `).catch((err) => {
-        console.warn('[data] ensureSchema failed (non-fatal):', err.message);
-        schemaReady = null; // retry next call
-      });
-    }
-    return schemaReady;
-  }
-  ensureSchema();
+  // (Schema is now owned by the server — bot's initTurso() + Worker schema
+  // migrations cover pending_ops creation. Client no longer DDLs.)
+  function ensureSchema() { return Promise.resolve(); }
 
   async function fetchOnce() {
     try {
-      const res = await tursoExecute(`
-        SELECT user_id, display_name, avatar_url, xp, level,
-               voice_seconds,
-               gym_posts, gym_streak_current, gym_streak_best,
-               last_daily_claim_day, last_booster_claim_day,
-               roles,
-               updated_at
-        FROM xp
-        ORDER BY xp DESC
-        LIMIT 50
-      `);
+      // Server-side consolidated poll. Replaces five separate Turso queries
+      // (xp leaderboard, purchases spend, aura_log feed, trophy aggregates,
+      // server_meta) with a single JWT-gated round trip. Pre-auth users get
+      // an empty snapshot — handled by the early return below.
+      if (!window.ElyAPI?.isSignedIn?.() || !window.ElyAPI?.get) {
+        return;
+      }
+      const snap = await window.ElyAPI.get('/me/poll');
+      const memberRows = snap?.members || [];
+      const meSnap     = snap?.me      || {};
+      const feedRows   = snap?.feed    || [];
+      const srvSnap    = snap?.server  || { iconUrl: null, name: 'ElyHub' };
 
-      const members = res.rows.map((r, i) => {
+      const members = memberRows.map((r, i) => {
         const name = r.display_name || `User ${String(r.user_id).slice(-4)}`;
         // Discord roles come down as a JSON string (see bot/turso.js
         // serializeRoles). Parse defensively — a malformed row shouldn't
@@ -539,6 +583,13 @@
           boosterClaimedToday: meRow.lastBoosterClaimDay === todayUtc,
         };
 
+        // Marketplace debit — server-computed. `meRow.aura` above is raw xp,
+        // so subtract the user's marketplace spend (returned in snap.me.spend)
+        // to get the live aura the topbar/home should show.
+        if (!isPreview && meRow.id && meSnap.spend > 0) {
+          newMe.aura = Math.max(0, newMe.aura - meSnap.spend);
+        }
+
         // Mutate window.ME in place (same reasoning as MEMBERS above).
         if (window.ME && typeof window.ME === 'object') {
           for (const k of Object.keys(window.ME)) delete window.ME[k];
@@ -548,29 +599,17 @@
         }
       }
 
-      // Aura feed — append-only log of notable events (gifts, daily claims,
-      // gym posts). We join on xp to get display_name for both sides of a
-      // gift so the feed renders standalone without another round-trip.
+      // Aura feed — already fetched in the consolidated /me/poll snapshot
+      // above. Just map to the client shape and run the new-event diff.
       try {
-        const feedRes = await tursoExecute(`
-          SELECT
-            l.id, l.kind, l.from_user_id, l.to_user_id, l.amount, l.note, l.at,
-            src.display_name AS from_name, src.avatar_url AS from_avatar,
-            dst.display_name AS to_name,   dst.avatar_url AS to_avatar
-          FROM aura_log l
-          LEFT JOIN xp src ON src.user_id = l.from_user_id
-          LEFT JOIN xp dst ON dst.user_id = l.to_user_id
-          ORDER BY l.at DESC
-          LIMIT 30
-        `);
-        const feed = feedRes.rows.map((r) => ({
+        const feed = feedRows.map((r) => ({
           id: Number(r.id),
           kind: String(r.kind),
           fromId: r.from_user_id ? String(r.from_user_id) : null,
           toId: String(r.to_user_id),
           amount: Number(r.amount) || 0,
           note: r.note || null,
-          at: Number(r.at) * 1000, // store as ms for Date math
+          at: Number(r.at) * 1000,
           fromName: r.from_name || null,
           fromAvatar: r.from_avatar || null,
           toName: r.to_name || null,
@@ -620,60 +659,24 @@
         console.warn('[data] aura_log fetch failed:', err.message);
       }
 
-      // Trophy aggregate stats — lifetime counters that aren't on the xp row.
-      // Only run when we have a signed-in user to attribute them to. Results
-      // get stitched onto window.ME so the trophy view can read them directly.
-      //
-      // We do this with a single grouped query instead of three round-trips:
-      // GROUP BY kind gets us gifts-sent total, postjob count (received), and
-      // founder-redeem existence in one pipeline call.
+      // Trophy aggregate stats — already in snap.me. Stitch onto window.ME
+      // so the trophy view reads them directly.
       try {
-        const meId = window.ME?.id;
-        if (meId) {
-          const aggRes = await tursoExecute({
-            sql: `
-              SELECT
-                -- gifts sent BY me (sum of amounts)
-                COALESCE(SUM(CASE WHEN kind='gift'    AND from_user_id = ? THEN amount END), 0) AS gifts_sent,
-                -- gifts received BY me (sum of amounts from OTHER people's gifts)
-                COALESCE(SUM(CASE WHEN kind='gift'    AND to_user_id   = ? THEN amount END), 0) AS gifts_received,
-                -- postjob grants FOR me (count of rows)
-                COALESCE(SUM(CASE WHEN kind='postjob' AND to_user_id   = ? THEN 1       END), 0) AS postjob_count,
-                -- founder 1:1 redemption — reward id is "r5" per tokens.jsx
-                COALESCE(SUM(CASE WHEN kind='redeem'  AND to_user_id   = ? AND note LIKE 'r5:%' THEN 1 END), 0) AS founder_redeems
-              FROM aura_log
-            `,
-            args: [meId, meId, meId, meId],
+        if (window.ME && typeof window.ME === 'object') {
+          Object.assign(window.ME, {
+            totalGiftsSent:     meSnap.totalGiftsSent     || 0,
+            totalGiftsReceived: meSnap.totalGiftsReceived || 0,
+            postjobCount:       meSnap.postjobCount       || 0,
+            founderRedeemed:    !!meSnap.founderRedeemed,
           });
-          const row = aggRes.rows?.[0] || {};
-          const patch = {
-            totalGiftsSent:     Number(row.gifts_sent) || 0,
-            totalGiftsReceived: Number(row.gifts_received) || 0,
-            postjobCount:       Number(row.postjob_count) || 0,
-            founderRedeemed:    (Number(row.founder_redeems) || 0) > 0,
-          };
-          // Patch window.ME in place so we don't break the const-binding.
-          if (window.ME && typeof window.ME === 'object') {
-            Object.assign(window.ME, patch);
-          }
         }
       } catch (err) {
-        console.warn('[data] trophy stats failed:', err.message);
+        console.warn('[data] trophy stats merge failed:', err.message);
       }
 
-      // Guild identity — tiny KV the bot writes on ready + GuildUpdate. Lets
-      // the sidebar render the real server icon/name instead of a hardcoded
-      // placeholder. Cheap query (2 rows), safe to run on every poll.
+      // Guild identity — already in snap.server.
       try {
-        const metaRes = await tursoExecute(`SELECT key, value FROM server_meta WHERE key IN ('icon_url', 'name')`);
-        const meta = {};
-        for (const row of metaRes.rows || []) {
-          meta[String(row.key)] = String(row.value || '');
-        }
-        const next = {
-          iconUrl: meta.icon_url || null,
-          name: meta.name || 'ElyHub',
-        };
+        const next = { iconUrl: srvSnap.iconUrl || null, name: srvSnap.name || 'ElyHub' };
         if (window.SERVER && typeof window.SERVER === 'object') {
           Object.assign(window.SERVER, next);
         } else {
@@ -707,5 +710,160 @@
   // instead of waiting for the next poll tick.
   if (window.ElyAuth?.subscribe) {
     window.ElyAuth.subscribe(() => fetchOnce());
+  }
+
+  // ─── Marketplace feed ──────────────────────────────────────────────────
+  // Pulls published listings from the backend API and merges them into
+  // window.LISTINGS. Runs independently of the xp poll — the feed doesn't
+  // change every 5s, so a slower cadence is fine (and reduces API load).
+  //
+  // We merge by id rather than replacing the whole array: the mock seed
+  // from tokens.jsx stays in place for now, and backend rows get upserted
+  // on top. When publishing.jsx is migrated and there's no more mock, we
+  // can drop the mock entirely.
+  function mapBackendListing(row) {
+    // Backend shape → UI shape. Backend uses snake_case + price_aura; the
+    // UI expects camelCase + `price`. Tags arrive as a JSON string or array
+    // depending on driver — normalize to array.
+    let tags = [];
+    if (Array.isArray(row.tags)) tags = row.tags;
+    else if (typeof row.tags === 'string') {
+      try { const parsed = JSON.parse(row.tags); if (Array.isArray(parsed)) tags = parsed; } catch {}
+    }
+    const category = row.type ? row.type.charAt(0).toUpperCase() + row.type.slice(1) : '';
+    return {
+      id: row.id,
+      type: row.type,
+      sellerId: row.seller_id,
+      title: row.title,
+      tagline: row.tagline || '',
+      description: row.description || '',
+      price: Number(row.price_aura) || 0,
+      billing: row.billing || 'one-time',
+      category,
+      tags,
+      // Backend pre-signs cover_key → cover_url (1h TTL) at response time.
+      // Null for listings without a cover (seeded demos, link-only listings).
+      // First-party Hugin (kassa_product_id='gleipnir') falls back to its
+      // local parchment-raven asset so the marketplace card never shows the
+      // generic plugin glyph for our flagship product.
+      cover: row.cover_url
+        || (row.kassa_product_id === 'gleipnir' ? 'assets/hugin-logo.png' : null),
+      screenshots: [],
+      level: Number(row.level_req) || 1,
+      downloads: Number(row.downloads) || 0,
+      sales: 0,
+      rating: 0,
+      reviewCount: 0,
+      // createdAt is a unix-ms timestamp used by sort-by-newest and the "NEW"
+      // badge / relative-time stamp. Backend stores seconds-or-ms — coerce to
+      // Number and pass through. Seed demos don't have this so their strip
+      // entries stay dateless.
+      createdAt: Number(row.created_at) || 0,
+      publishedAt: row.created_at ? new Date(Number(row.created_at)).toISOString().slice(0, 10) : null,
+      updatedAt: row.created_at ? new Date(Number(row.created_at)).toISOString().slice(0, 10) : null,
+      featured: !!row.featured,
+      // Kassa license gating — used by Hugin view, theme unlock, etc.
+      kassa_product_id: row.kassa_product_id || null,
+      kassaProductId: row.kassa_product_id || null,
+      kassa_tier: row.kassa_tier || null,
+      // GitHub auto-update — populated by server cron from /releases/latest.
+      // Download/Update buttons in My Library prefer current_version_url
+      // over the R2 pack-asset flow whenever it's set.
+      github_repo: row.github_repo || null,
+      current_version: row.current_version || null,
+      current_version_url: row.current_version_url || null,
+    };
+  }
+
+  // Hydrate unknown sellers lazily. When a listing arrives with a sellerId
+  // that isn't in window.MEMBERS, fetch /users/:id and splice a minimal row
+  // into MEMBERS so the "by <Name>" line resolves instead of falling back
+  // to "Unknown". We dedupe per-id across the session so a flaky backend
+  // can't cause a fetch storm, and we only kick off one request per id
+  // even if multiple listings share a seller.
+  const hydrated = new Set();    // sellerIds we've already hydrated
+  const pending = new Map();     // sellerId → Promise (so concurrent calls share)
+  // Seed / mock seller ids that only exist in tokens.jsx — never hit the
+  // backend for these, they 404 by design. `me` leaks in from local-
+  // fallback publishes that saved the literal string as sellerId.
+  const MOCK_SELLER = /^(u\d+|me|seed-.*)$/;
+  async function hydrateSeller(sellerId) {
+    if (!sellerId || hydrated.has(sellerId)) return;
+    if (MOCK_SELLER.test(sellerId)) { hydrated.add(sellerId); return; }
+    if (!window.ElyAPI?.get) return;
+    if (pending.has(sellerId)) return pending.get(sellerId);
+    const p = (async () => {
+      try {
+        const u = await window.ElyAPI.get(`/users/${encodeURIComponent(sellerId)}`);
+        if (!u || !u.id) return;
+        if (!Array.isArray(window.MEMBERS)) window.MEMBERS = [];
+        // Check again under the promise in case something else raced us.
+        const exists = window.MEMBERS.some((m) => m.id === u.id);
+        if (!exists) {
+          window.MEMBERS.push({
+            id: u.id,
+            name: u.name || u.username || 'Creator',
+            tag: u.username || u.id,
+            avatar: u.avatar_url || '',
+            level: 1,
+            aura: 0,
+            streak: 0,
+            bio: '',
+          });
+        }
+        hydrated.add(sellerId);
+        notify();
+      } catch (err) {
+        // 404 is fine (user was deleted); swallow and mark hydrated so we
+        // don't re-fetch every poll. Network errors don't mark — we'll
+        // retry on the next listings poll.
+        if (/404|not_found/i.test(err?.message || '')) hydrated.add(sellerId);
+      } finally {
+        pending.delete(sellerId);
+      }
+    })();
+    pending.set(sellerId, p);
+    return p;
+  }
+
+  async function fetchListingsOnce() {
+    if (!window.ElyAPI?.get) return; // api.jsx hasn't loaded yet
+    try {
+      const res = await window.ElyAPI.get('/listings');
+      const items = Array.isArray(res?.items) ? res.items : [];
+      if (!Array.isArray(window.LISTINGS)) window.LISTINGS = [];
+      const byId = new Map(window.LISTINGS.map((l) => [l.id, l]));
+      for (const raw of items) {
+        const mapped = mapBackendListing(raw);
+        byId.set(mapped.id, mapped); // upsert — overrides mock if same id
+      }
+      // Mutate in place so views that hold a reference to window.LISTINGS
+      // (there's a const binding in app.jsx) still see the update.
+      window.LISTINGS.length = 0;
+      window.LISTINGS.push(...byId.values());
+      // notify() re-renders everything subscribed via __subscribeLive —
+      // app.jsx subscribes at the root so every view that reads
+      // window.LISTINGS picks up the upserted rows on the next paint.
+      notify();
+      // Fan-out hydration for any sellerIds we haven't resolved yet.
+      const members = window.MEMBERS || [];
+      const known = new Set(members.map((m) => m.id));
+      const missing = new Set();
+      for (const l of window.LISTINGS) {
+        if (l.sellerId && !known.has(l.sellerId)) missing.add(l.sellerId);
+      }
+      for (const sid of missing) hydrateSeller(sid);
+    } catch (err) {
+      console.warn('[data] /listings fetch failed:', err.message);
+    }
+  }
+  // First fetch soon after boot, then every 30s.
+  setTimeout(fetchListingsOnce, 800);
+  setInterval(fetchListingsOnce, 30_000);
+  // Also refetch right after sign-in — a fresh session might unlock private
+  // listings eventually, and it's a cheap way to feel snappy.
+  if (window.ElyAuth?.subscribe) {
+    window.ElyAuth.subscribe(() => fetchListingsOnce());
   }
 })();

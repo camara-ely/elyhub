@@ -51,32 +51,41 @@ const TY = {
 // (blur + saturate + brightness<1) is what gives it the slightly-darkened
 // liquid-glass feel without looking washed out. brightness(0.85) is key —
 // pure blur+saturate on bright backgrounds still reads as a bright panel.
-const glass = (level = 1, extra = {}) => ({
-  background: level === 2 ? T.glassBg2 : T.glassBg,
-  backdropFilter: 'blur(36px) saturate(180%) brightness(0.85)',
-  WebkitBackdropFilter: 'blur(36px) saturate(180%) brightness(0.85)',
-  border: `0.5px solid ${T.glassBorder}`,
-  borderRadius: T.r.lg,
-  // Outer shadow anchors the card in space; inset highlight is the thin
-  // lit edge along the top that sells the "thick glass" material.
-  boxShadow: `inset 0 1px 0 ${T.glassHi}, inset 0 0 0 0.5px rgba(255,255,255,0.02), 0 12px 50px rgba(0,0,0,0.45)`,
-  ...extra,
-});
+const glass = (level = 1, extra = {}) => {
+  // Zodiac mode: panels are clean ruled rectangles — single thin gold
+  // hairline border on transparent ink, square-ish corners, no shadow,
+  // no inner highlight, no grain. Information hierarchy comes from the
+  // dividers/banners INSIDE the panel, not from the panel's own visual
+  // weight. This matches the "Your Majesty" / Lovers tarot aesthetic
+  // where the frame is a single deliberate line, not a pillow surface.
+  if (T.zodiac) {
+    // Solid ink gradient — was rgba(10,6,18,0.55) which left dropdowns
+    // (search, profile menu, NotifDrawer) see-through and unreadable over
+    // the Hugin/zodiac art beneath. Ink2 → ink linear gradient is fully
+    // opaque and matches the rest of the zodiac panel language.
+    return {
+      background: 'linear-gradient(180deg, #13110D, #0A0908)',
+      border: '1px solid rgba(201,162,74,0.55)',
+      borderRadius: 4,
+      boxShadow: '0 12px 40px rgba(0,0,0,0.6), 0 0 24px rgba(201,162,78,0.18)',
+      ...extra,
+    };
+  }
+  return {
+    background: level === 2 ? T.glassBg2 : T.glassBg,
+    backdropFilter: 'blur(36px) saturate(180%) brightness(0.85)',
+    WebkitBackdropFilter: 'blur(36px) saturate(180%) brightness(0.85)',
+    border: `0.5px solid ${T.glassBorder}`,
+    borderRadius: T.r.lg,
+    boxShadow: `inset 0 1px 0 ${T.glassHi}, inset 0 0 0 0.5px rgba(255,255,255,0.02), 0 12px 50px rgba(0,0,0,0.45)`,
+    ...extra,
+  };
+};
 
-// ──── Mock data ────
-const MEMBERS = [
-  { id: 'u1', name: 'Diogo Marques',  tag: 'diogom',   aura: 48240, level: 42, delta: 2,  role: 'Founder' },
-  { id: 'u2', name: 'Mariana Silva',  tag: 'mari',     aura: 41180, level: 39, delta: 1,  role: 'Booster' },
-  { id: 'u3', name: 'Rui Almeida',    tag: 'ruia',     aura: 39950, level: 38, delta: -1, role: 'Recruiter' },
-  { id: 'u4', name: 'Inês Pereira',   tag: 'inesp',    aura: 34220, level: 35, delta: 3,  role: 'Dealmaker' },
-  { id: 'u5', name: 'Tiago Costa',    tag: 'tgc',      aura: 31010, level: 33, delta: 0,  role: 'Booster' },
-  { id: 'me', name: 'Alexandre Ely',  tag: 'ely',      aura: 29840, level: 32, delta: 3,  role: 'Dealmaker' },
-  { id: 'u6', name: 'Ana Ribeiro',    tag: 'anar',     aura: 28470, level: 31, delta: -2, role: 'Gym Club' },
-  { id: 'u7', name: 'Pedro Sousa',    tag: 'peds',     aura: 26120, level: 29, delta: 5,  role: 'VC' },
-  { id: 'u8', name: 'Carolina Dias',  tag: 'carold',   aura: 24880, level: 28, delta: 1,  role: 'Chatter' },
-  { id: 'u9', name: 'João Teixeira',  tag: 'jteix',    aura: 22390, level: 27, delta: -1, role: 'Gym Club' },
-  { id: 'u10', name: 'Sofia Moreira', tag: 'sofm',     aura: 20110, level: 25, delta: 0,  role: 'Newcomer' },
-];
+// MEMBERS — populated by data.jsx (leaderboard poll) and lazily via
+// /users/:id hydration when a listing references a seller we haven't
+// met yet. Starts empty; the app no longer ships demo people.
+const MEMBERS = [];
 
 const ME = { id: 'me', name: 'Alexandre Ely', tag: 'ely', aura: 29840, level: 32, rank: 6, streak: 14, nextLevelAura: 32000, prevLevelAura: 28000, roles: ['Booster', 'Gym Club', 'Dealmaker'] };
 
@@ -116,254 +125,43 @@ const NOTIFICATIONS = [
 
 const fmt = (n) => n.toLocaleString('en-US');
 
+// Collapse tier-alias rows: when multiple listings share kassa_product_id
+// (e.g. Hugin 1key + Hugin 2key), only the canonical (cheapest) row should
+// surface in any listing-grid context — marketplace cards, seller profile,
+// search. The higher-priced tier rows still exist in window.LISTINGS so
+// ZephyroView can build its tier selector; they just don't render as their
+// own card. Listings without kassa_product_id pass through untouched.
+function dedupTieredListings(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return arr || [];
+  const canonical = new Map(); // kpid -> cheapest listing
+  for (const l of arr) {
+    const kpid = l && (l.kassa_product_id || l.kassaProductId);
+    if (!kpid) continue;
+    const prev = canonical.get(kpid);
+    if (!prev || (l.price || 0) < (prev.price || 0)) canonical.set(kpid, l);
+  }
+  return arr.filter((l) => {
+    const kpid = l && (l.kassa_product_id || l.kassaProductId);
+    if (!kpid) return true;
+    return canonical.get(kpid) === l;
+  });
+}
+window.dedupTieredListings = dedupTieredListings;
+
 // ──────────────── LISTINGS ────────────────
 // Marketplace items. Type-driven schema — every listing has the same shape;
 // `type` switches its category icon, badge label, and detail-page render.
+// Populated at runtime by data.jsx's /listings poll — tokens.jsx no longer
+// ships a demo catalog. Shape reference (what the backend mapper emits):
 //
-//   plugin     — installs an in-app sidebar tab (KassaHub, etc). billing=monthly.
-//   theme      — visual theme for ElyHub itself (applies via theme picker).
-//   background — wallpaper/orb config for ElyHub.
-//   sfx        — sound-effect pack (download, use in any DAW/NLE).
-//   preset     — Premiere/AE/Resolve/Lightroom presets.
-//   rig        — 3D character/asset rigs (Blender/Cinema4D).
-//   template   — project templates (After Effects, Figma, etc).
+//   id, type, sellerId, title, tagline, description,
+//   price (aura), billing ('one-time' | 'monthly'), level,
+//   tags[], cover, screenshots[], downloads, sales, rating, reviewCount,
+//   publishedAt, updatedAt, featured, payload
 //
-//   billing    — 'one-time' (pay once, own forever) | 'monthly' (subscription).
-//   sellerId   — MEMBERS.id; resolves to creator card on detail page.
-//   downloads  — lifetime install count (used for "trending" sort).
-//   rating     — 0–5, two decimals.
-//   featured   — opt-in flag for the hero slot on MarketHome.
-const LISTINGS = [
-  // ── Plugins ──
-  {
-    id: 'l-kassahub',
-    type: 'plugin', sellerId: 'u3',
-    title: 'KassaHub', tagline: 'All-in-one editor sidekick',
-    description: 'Streamlined panel for editors — clip notes, render queue tracker, asset bin sync, and a quick-access library that lives next to your timeline. Built for Premiere & DaVinci.',
-    price: 50000, billing: 'monthly',
-    category: 'Plugin', tags: ['editor', 'productivity', 'tauri'],
-    cover: 'assets/listing-kassahub-cover.png',
-    screenshots: ['assets/listing-kassahub-1.png', 'assets/listing-kassahub-2.png'],
-    level: 15,
-    downloads: 1240, sales: 184, rating: 4.82, reviewCount: 73,
-    publishedAt: '2025-12-08', updatedAt: '2026-04-02',
-    featured: true,
-    payload: { entry: 'kassahub://main' },
-  },
-  {
-    id: 'l-frametrap',
-    type: 'plugin', sellerId: 'u7',
-    title: 'FrameTrap', tagline: 'Catch every cut',
-    description: 'AI scene-change detector that scrubs your raw footage and drops markers at every meaningful cut. Trained on 10k hours of edited content.',
-    price: 35000, billing: 'monthly',
-    category: 'Plugin', tags: ['ai', 'editor'],
-    cover: 'assets/listing-frametrap-cover.png',
-    screenshots: [],
-    level: 20,
-    downloads: 412, sales: 58, rating: 4.6, reviewCount: 21,
-    publishedAt: '2026-02-14', updatedAt: '2026-04-10',
-  },
-
-  // ── Themes (in-app) ──
-  {
-    id: 'l-theme-noctua',
-    type: 'theme', sellerId: 'u4',
-    title: 'Noctua', tagline: 'Owl-quiet midnight blues',
-    description: 'A theme tuned for late-night sessions. Deeper blues, warmer accents, glass that swallows the light.',
-    price: 12000, billing: 'one-time',
-    category: 'Theme', tags: ['dark', 'blue', 'minimal'],
-    cover: 'assets/listing-noctua-cover.png',
-    screenshots: ['assets/listing-noctua-1.png'],
-    level: 5,
-    downloads: 2841, sales: 920, rating: 4.91, reviewCount: 312,
-    publishedAt: '2026-01-22', updatedAt: '2026-03-30',
-    featured: true,
-    payload: { themeKey: 'custom-noctua' },
-  },
-  {
-    id: 'l-theme-glassine',
-    type: 'theme', sellerId: 'me',
-    title: 'Glassine', tagline: 'High-clarity frosted set',
-    description: 'A 4-variant pack: Clear, Smoke, Amber, Rose. All with hand-tuned hue-aware text contrast.',
-    price: 18000, billing: 'one-time',
-    category: 'Theme', tags: ['pack', 'glass', 'pastel'],
-    cover: 'assets/listing-glassine-cover.png',
-    screenshots: [],
-    level: 10,
-    downloads: 690, sales: 210, rating: 4.7, reviewCount: 88,
-    publishedAt: '2026-03-01', updatedAt: '2026-04-15',
-  },
-
-  // ── Backgrounds (in-app wallpapers) ──
-  {
-    id: 'l-bg-aurora',
-    type: 'background', sellerId: 'u2',
-    title: 'Aurora 6-pack', tagline: 'Northern-light gradients',
-    description: 'Six layered wallpapers, each tuned for a different mood. Includes the editable .png + ElyHub theme JSON.',
-    price: 8000, billing: 'one-time',
-    category: 'Background', tags: ['wallpaper', 'gradient', 'pack'],
-    cover: 'assets/listing-aurora-cover.png',
-    screenshots: ['assets/listing-aurora-1.png', 'assets/listing-aurora-2.png'],
-    level: 5,
-    downloads: 1820, sales: 540, rating: 4.85, reviewCount: 197,
-    publishedAt: '2026-02-08', updatedAt: '2026-03-22',
-  },
-  {
-    id: 'l-bg-dunes-pro',
-    type: 'background', sellerId: 'u9',
-    title: 'Dunes Pro', tagline: 'Higher-res sequel to Dunes',
-    description: 'Same vibe as the stock Dunes wallpaper — bumped to 4K and re-graded for warmer mids.',
-    price: 5000, billing: 'one-time',
-    category: 'Background', tags: ['wallpaper', '4k'],
-    cover: 'assets/listing-dunes-pro-cover.png',
-    screenshots: [],
-    level: 1,
-    downloads: 3120, sales: 1102, rating: 4.6, reviewCount: 240,
-    publishedAt: '2026-01-04', updatedAt: '2026-04-18',
-  },
-
-  // ── SFX packs ──
-  {
-    id: 'l-sfx-tactile',
-    type: 'sfx', sellerId: 'u1',
-    title: 'Tactile UI Pack', tagline: '120 hand-crafted UI clicks',
-    description: 'Every click, hover, swoosh, and swipe a montage editor needs. Recorded on analogue gear, processed in Pro Tools.',
-    price: 22000, billing: 'one-time',
-    category: 'Sound', tags: ['sfx', 'ui', 'foley'],
-    cover: 'assets/listing-tactile-cover.png',
-    screenshots: [],
-    level: 10,
-    downloads: 980, sales: 312, rating: 4.88, reviewCount: 142,
-    publishedAt: '2026-01-30', updatedAt: '2026-04-05',
-    featured: true,
-  },
-  {
-    id: 'l-sfx-cinematic-impacts',
-    type: 'sfx', sellerId: 'u5',
-    title: 'Cinematic Impacts Vol. 2', tagline: '40 trailer hits + risers',
-    description: 'Forty stems engineered for trailer cuts. Stems split into Boom / Tail / Riser so you can mix to your edit.',
-    price: 28000, billing: 'one-time',
-    category: 'Sound', tags: ['sfx', 'trailer', 'cinematic'],
-    cover: 'assets/listing-impacts-cover.png',
-    screenshots: [],
-    level: 15,
-    downloads: 540, sales: 170, rating: 4.74, reviewCount: 64,
-    publishedAt: '2026-03-12', updatedAt: '2026-04-19',
-  },
-
-  // ── Presets ──
-  {
-    id: 'l-preset-grade-warm',
-    type: 'preset', sellerId: 'u8',
-    title: 'Warm Grade · Resolve', tagline: 'Sun-soaked color science',
-    description: 'A LUT + node tree for DaVinci that pushes neutrals toward warm amber. Tested on Sony, Canon, Lumix footage.',
-    price: 9000, billing: 'one-time',
-    category: 'Preset', tags: ['color', 'davinci', 'lut'],
-    cover: 'assets/listing-warmgrade-cover.png',
-    screenshots: [],
-    level: 5,
-    downloads: 2200, sales: 870, rating: 4.79, reviewCount: 281,
-    publishedAt: '2026-02-20', updatedAt: '2026-04-12',
-  },
-  {
-    id: 'l-preset-mogrt',
-    type: 'preset', sellerId: 'u6',
-    title: 'Motion Title Kit', tagline: '24 .mogrt animated titles',
-    description: 'Drag-and-drop title presets for Premiere. Editable in Essential Graphics. Variable fonts included.',
-    price: 14000, billing: 'one-time',
-    category: 'Preset', tags: ['premiere', 'titles', 'mogrt'],
-    cover: 'assets/listing-mogrt-cover.png',
-    screenshots: [],
-    level: 8,
-    downloads: 1340, sales: 420, rating: 4.65, reviewCount: 130,
-    publishedAt: '2026-01-15', updatedAt: '2026-03-28',
-  },
-
-  // ── 3D rigs ──
-  {
-    id: 'l-rig-stickfella',
-    type: 'rig', sellerId: 'u10',
-    title: 'StickFella Rig', tagline: 'Cartoony stick character',
-    description: 'A fully rigged Blender character with IK arms/legs, facial morph targets, and 6 walk-cycle starter clips.',
-    price: 24000, billing: 'one-time',
-    category: '3D', tags: ['blender', 'rig', 'character'],
-    cover: 'assets/listing-stickfella-cover.png',
-    screenshots: [],
-    level: 12,
-    downloads: 380, sales: 96, rating: 4.92, reviewCount: 52,
-    publishedAt: '2026-02-26', updatedAt: '2026-04-08',
-    featured: true,
-  },
-  {
-    id: 'l-rig-product',
-    type: 'rig', sellerId: 'u3',
-    title: 'Product Studio', tagline: 'Plug-and-render product set',
-    description: 'A Cinema4D scene with HDRi, area lights, turntable cam rig, and 6 material presets. Drop your model, hit render.',
-    price: 32000, billing: 'one-time',
-    category: '3D', tags: ['c4d', 'product', 'render'],
-    cover: 'assets/listing-product-cover.png',
-    screenshots: [],
-    level: 18,
-    downloads: 210, sales: 71, rating: 4.8, reviewCount: 28,
-    publishedAt: '2026-03-18', updatedAt: '2026-04-19',
-  },
-
-  // ── Templates ──
-  {
-    id: 'l-tpl-aenkit',
-    type: 'template', sellerId: 'u4',
-    title: 'AE Intro Kit', tagline: 'Logo-reveal pack',
-    description: 'Ten After Effects intro projects, all editable in CC 2024+. Includes audio cues and color-coded comp tree.',
-    price: 16000, billing: 'one-time',
-    category: 'Template', tags: ['ae', 'intro', 'logo'],
-    cover: 'assets/listing-aekit-cover.png',
-    screenshots: [],
-    level: 8,
-    downloads: 1120, sales: 360, rating: 4.7, reviewCount: 142,
-    publishedAt: '2026-01-08', updatedAt: '2026-03-15',
-  },
-  {
-    id: 'l-tpl-pitchdeck',
-    type: 'template', sellerId: 'me',
-    title: 'Pitch Deck · Figma', tagline: '32-slide investor template',
-    description: 'A polished pitch deck in Figma — variants for SaaS, marketplace, and consumer. Auto-layout everywhere.',
-    price: 11000, billing: 'one-time',
-    category: 'Template', tags: ['figma', 'pitch', 'design'],
-    cover: 'assets/listing-pitch-cover.png',
-    screenshots: [],
-    level: 5,
-    downloads: 760, sales: 234, rating: 4.55, reviewCount: 88,
-    publishedAt: '2026-02-02', updatedAt: '2026-04-01',
-  },
-  {
-    id: 'l-tpl-thumb',
-    type: 'template', sellerId: 'u7',
-    title: 'YT Thumbnail Pack', tagline: '40 layered .psd thumbnails',
-    description: 'A library of high-CTR thumbnail layouts. Smart objects make swapping your hero shot a single click.',
-    price: 7500, billing: 'one-time',
-    category: 'Template', tags: ['youtube', 'thumbnail', 'psd'],
-    cover: 'assets/listing-thumb-cover.png',
-    screenshots: [],
-    level: 1,
-    downloads: 3450, sales: 980, rating: 4.62, reviewCount: 320,
-    publishedAt: '2025-12-12', updatedAt: '2026-04-20',
-  },
-
-  // ── More plugins ──
-  {
-    id: 'l-plugin-aurasync',
-    type: 'plugin', sellerId: 'u2',
-    title: 'AuraSync', tagline: 'Discord ↔ Premiere project sync',
-    description: 'Push your Premiere chapter markers to a Discord channel as a polished embed. Notifies the team on every render.',
-    price: 25000, billing: 'monthly',
-    category: 'Plugin', tags: ['discord', 'premiere', 'collab'],
-    cover: 'assets/listing-aurasync-cover.png',
-    screenshots: [],
-    level: 18,
-    downloads: 290, sales: 41, rating: 4.5, reviewCount: 14,
-    publishedAt: '2026-03-25', updatedAt: '2026-04-21',
-  },
-];
+// Keep the array mutable (not frozen) — data.jsx mutates in place so React
+// refs stay stable.
+const LISTINGS = [];
 
 // Listing types — single source of truth for icons, labels, tints used across
 // the marketplace UI. Order here drives the category-tile order on MarketHome.
@@ -462,7 +260,11 @@ function getCollectionItems(col) {
 // by the seller card on listing detail. Kept as a function so a future swap
 // to live data is one-line.
 function getCreatorStats(sellerId) {
-  const items = LISTINGS.filter((l) => l.sellerId === sellerId);
+  // Dedup tier-alias rows so a creator with one tiered product (e.g. Hugin
+  // 1key + 2key) shows up as 1 listing, not 2. Mirrors what listing grids do.
+  const raw = LISTINGS.filter((l) => l.sellerId === sellerId);
+  const items = (typeof window !== 'undefined' && window.dedupTieredListings)
+    ? window.dedupTieredListings(raw) : raw;
   if (!items.length) return { listings: 0, sales: 0, downloads: 0, avgRating: 0 };
   const sales = items.reduce((a, l) => a + (l.sales || 0), 0);
   const downloads = items.reduce((a, l) => a + (l.downloads || 0), 0);

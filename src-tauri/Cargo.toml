@@ -17,8 +17,14 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"
+# Auto-update OTA. The plugin checks the manifest URL set in tauri.conf.json
+# (`plugins.updater.endpoints`), downloads the platform-matching artifact,
+# verifies it against TAURI_SIGNING_PUBLIC_KEY, and applies. Without the
+# key the updater refuses to install — defends against a poisoned mirror.
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rfd = "0.14"
 
 [profile.release]
 panic = "abort"

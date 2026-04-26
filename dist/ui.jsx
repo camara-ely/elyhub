@@ -26,6 +26,7 @@ const IChevR = p => <Icon {...p}><path d="m9 6 6 6-6 6"/></Icon>;
 const IChevL = p => <Icon {...p}><path d="m15 6-6 6 6 6"/></Icon>;
 const IX = p => <Icon {...p}><path d="M18 6 6 18M6 6l12 12"/></Icon>;
 const ICheck = p => <Icon {...p}><path d="m5 12 5 5 9-10"/></Icon>;
+const IDownload = p => <Icon {...p}><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></Icon>;
 const IFlame = p => <Icon {...p}><path d="M12 3s5 4.5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5C9 9 10 8 10 6c1.5 1 2 2.5 2 2.5S12 5.5 12 3z"/></Icon>;
 const ILock = p => <Icon {...p}><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></Icon>;
 const ISparkle = p => <Icon {...p}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.5 5.5l2.5 2.5M16 16l2.5 2.5M5.5 18.5 8 16M16 8l2.5-2.5"/></Icon>;
@@ -52,15 +53,24 @@ const ILogo = ({ size = 24 }) => (
 
 // Avatar — glassy with soft inner glow
 function Avatar({ name = 'A', size = 32, src, ring, accent }) {
+  // Zodiac gate — when zodiac is active, every avatar everywhere becomes the
+  // celestial medallion (gold ring + sign glyph badge). Falls back to the
+  // initials/photo render below for every other theme.
+  if (T.zodiac && window.ZAvatar) {
+    return <window.ZAvatar name={name} size={size} src={src} ring={ring}/>;
+  }
   const seed = [...name].reduce((a, c) => a + c.charCodeAt(0), 0);
   const h1 = (seed * 47) % 360;
   const h2 = (h1 + 40) % 360;
-  const bg = src ? `url(${src})` : `linear-gradient(140deg, oklch(0.65 0.18 ${h1}), oklch(0.45 0.15 ${h2}))`;
   const initials = name.split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase();
+  // Use the split longhand (backgroundImage + backgroundSize) rather than the
+  // `background` shorthand — React warns when mixing shorthand with longhand
+  // because rerender order can clobber one with the other.
+  const bgImage = src ? `url(${src})` : `linear-gradient(140deg, oklch(0.65 0.18 ${h1}), oklch(0.45 0.15 ${h2}))`;
   return (
     <div style={{
       width: size, height: size, borderRadius: '50%', flexShrink: 0,
-      background: bg, backgroundSize: 'cover',
+      backgroundImage: bgImage, backgroundSize: 'cover', backgroundPosition: 'center',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       color: 'white', fontFamily: T.fontSans, fontWeight: 600,
       fontSize: size * 0.38, letterSpacing: '-0.02em',
@@ -74,9 +84,72 @@ function Avatar({ name = 'A', size = 32, src, ring, accent }) {
 
 // Button
 function Btn({ children, variant = 'primary', onClick, icon, iconRight, size = 'md', full, disabled, style = {} }) {
+  // Zodiac gate — every Btn everywhere becomes the foil ribbon variant.
+  if (T.zodiac && window.ZBtn) {
+    return <window.ZBtn variant={variant} onClick={onClick} icon={icon} iconRight={iconRight}
+      size={size} full={full} disabled={disabled} style={style}>{children}</window.ZBtn>;
+  }
   const h = size === 'lg' ? 46 : size === 'sm' ? 32 : 38;
   const fs = size === 'lg' ? 15 : size === 'sm' ? 13 : 14;
-  const base = {
+  // Zodiac branch — solid stamped buttons, no blur, no glow halo. Primary is
+  // a flat gold-leaf rectangle with a sharp inset bevel (reads as engraved
+  // metal); secondary is midnight stone with a gold hairline; ghost stays
+  // transparent but switches to a serif italic for the catolic-cartoon feel.
+  // Border-radius collapses to the small tier so corners stop being pillowy.
+  const base = T.zodiac ? {
+    // Primary: solid gold hairline-ruled rectangle on midnight. No gradient,
+    // no bevel, no glow — a clean engraved plaque. Text is cream-gold serif
+    // italic; the rectangle reads as part of the tarot frame language.
+    primary: {
+      background: 'rgba(201,162,74,0.10)',
+      color: '#F2D58C',
+      border: '1px solid #C9A24A',
+      boxShadow: 'none',
+      fontFamily: '"Cormorant Garamond","Instrument Serif",serif',
+      fontStyle: 'italic',
+      fontWeight: 500,
+      letterSpacing: '0.12em',
+      textTransform: 'uppercase',
+    },
+    // Secondary: even quieter — transparent on midnight with a dim gold rule.
+    secondary: {
+      background: 'transparent',
+      color: '#C9A24A',
+      border: '1px solid rgba(201,162,74,0.50)',
+      boxShadow: 'none',
+      fontFamily: '"Cormorant Garamond","Instrument Serif",serif',
+      fontStyle: 'italic',
+      fontWeight: 500,
+      letterSpacing: '0.12em',
+      textTransform: 'uppercase',
+    },
+    // Ghost: the "Sign" affordance from the coronation ref — no border, no
+    // bg, just serif italic with an underline that feels handwritten.
+    ghost: {
+      background: 'transparent',
+      color: '#F2D58C',
+      border: 'transparent',
+      borderBottom: '1px solid rgba(242,213,140,0.50)',
+      borderRadius: 0,
+      fontFamily: '"Cormorant Garamond","Instrument Serif",serif',
+      fontStyle: 'italic',
+      fontWeight: 500,
+      letterSpacing: '0.05em',
+      textTransform: 'none',
+    },
+    // Light: cream parchment plaque (used for opposite-tone CTAs)
+    light: {
+      background: '#F4E4B8',
+      color: '#0A0612',
+      border: '1px solid #7A6230',
+      boxShadow: 'none',
+      fontFamily: '"Cormorant Garamond","Instrument Serif",serif',
+      fontStyle: 'italic',
+      fontWeight: 600,
+      letterSpacing: '0.10em',
+      textTransform: 'uppercase',
+    },
+  }[variant] : {
     primary: {
       background: `linear-gradient(180deg, ${T.accentHi}, ${T.accent})`,
       color: '#fff', border: `0.5px solid ${T.accent}`,
@@ -93,7 +166,10 @@ function Btn({ children, variant = 'primary', onClick, icon, iconRight, size = '
   }[variant];
   return (
     <button onClick={disabled ? undefined : onClick} style={{
-      height: h, padding: `0 ${size==='sm'?14:18}px`, borderRadius: T.r.pill,
+      height: h, padding: `0 ${size==='sm'?14:18}px`,
+      // Pill corners under default theme; under Zodiac we drop to a hairline
+      // ruled rectangle (square corners) — a deliberate plaque, not a pill.
+      borderRadius: T.zodiac ? 2 : T.r.pill,
       ...(disabled ? { background: 'rgba(255,255,255,0.04)', color: T.text3, border: `0.5px solid ${T.glassBorder}` } : base),
       fontFamily: T.fontSans, fontWeight: 500, fontSize: fs,
       letterSpacing: '-0.005em',
@@ -104,13 +180,32 @@ function Btn({ children, variant = 'primary', onClick, icon, iconRight, size = '
     }}
     onMouseOver={e => {
       if (disabled) return;
-      e.currentTarget.style.transform = 'translateY(-1px)';
-      if (variant === 'primary') e.currentTarget.style.boxShadow = `inset 0 1px 0 rgba(255,255,255,0.4), 0 6px 28px ${T.accentGlow}`;
+      if (T.zodiac) {
+        // Hover: brighten gold border + slightly lift bg fill. No transform.
+        if (variant === 'primary') {
+          e.currentTarget.style.background = 'rgba(242,213,140,0.18)';
+        } else if (variant === 'secondary') {
+          e.currentTarget.style.background = 'rgba(201,162,74,0.10)';
+          e.currentTarget.style.color = '#F2D58C';
+        }
+      } else {
+        e.currentTarget.style.transform = 'translateY(-1px)';
+        if (variant === 'primary') e.currentTarget.style.boxShadow = `inset 0 1px 0 rgba(255,255,255,0.4), 0 6px 28px ${T.accentGlow}`;
+      }
     }}
     onMouseOut={e => {
       if (disabled) return;
-      e.currentTarget.style.transform = 'translateY(0)';
-      if (variant === 'primary') e.currentTarget.style.boxShadow = `inset 0 1px 0 rgba(255,255,255,0.3), 0 4px 20px ${T.accentGlow}`;
+      if (T.zodiac) {
+        if (variant === 'primary') {
+          e.currentTarget.style.background = 'rgba(201,162,74,0.10)';
+        } else if (variant === 'secondary') {
+          e.currentTarget.style.background = 'transparent';
+          e.currentTarget.style.color = '#C9A24A';
+        }
+      } else {
+        e.currentTarget.style.transform = 'translateY(0)';
+        if (variant === 'primary') e.currentTarget.style.boxShadow = `inset 0 1px 0 rgba(255,255,255,0.3), 0 4px 20px ${T.accentGlow}`;
+      }
     }}
     >{icon}{children}{iconRight}</button>
   );

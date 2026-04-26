@@ -17,6 +17,8 @@ import type { Env } from './types';
 
 const TTL_UPLOAD_SEC = 15 * 60;    // 15 min — uploads can be large, give some slack
 const TTL_DOWNLOAD_SEC = 5 * 60;   // 5 min — short, client follows immediately
+const TTL_COVER_SEC = 60 * 60;     // 1h — feed thumbnails, cached by the browser;
+                                    // long-lived so we don't re-sign on every scroll
 
 function client(env: Env): AwsClient {
   return new AwsClient({
@@ -45,14 +47,21 @@ export async function signPutUrl(
   return signed.url;
 }
 
-export async function signGetUrl(env: Env, key: string): Promise<string> {
+export async function signGetUrl(env: Env, key: string, ttlSec = TTL_DOWNLOAD_SEC): Promise<string> {
   const url = new URL(`${endpoint(env)}/${encodeURI(key)}`);
-  url.searchParams.set('X-Amz-Expires', String(TTL_DOWNLOAD_SEC));
+  url.searchParams.set('X-Amz-Expires', String(ttlSec));
   const signed = await client(env).sign(
     new Request(url, { method: 'GET' }),
     { aws: { signQuery: true } },
   );
   return signed.url;
+}
+
+// Convenience for marketplace covers — same signer, longer TTL. Split
+// into its own export so callers self-document intent (and so the default
+// download TTL stays aggressively short for entitled content).
+export async function signCoverUrl(env: Env, key: string): Promise<string> {
+  return signGetUrl(env, key, TTL_COVER_SEC);
 }
 
 // Build a stable, collision-free key for a new asset. Format:

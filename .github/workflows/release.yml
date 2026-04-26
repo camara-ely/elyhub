@@ -104,14 +104,25 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # TODO: set these once we have signing infrastructure.
-          #   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_SIGNING_IDENTITY
-          #   APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID        (notarization)
-          #   WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD
-          #   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD  (updater)
-          # Without them the app is unsigned — macOS Gatekeeper flags it as
-          # "unidentified developer" and Windows SmartScreen shows a warning.
-          # Users can still run it, but the UX is rough.
+          # macOS code-signing + notarization. Skipped (unsigned build) if
+          # any of these are missing — Gatekeeper will warn but the app still
+          # runs. See RELEASE.md for how to provision the cert.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows Authenticode. Skipped (SmartScreen warning, but installs)
+          # if missing. Cert can be ev or standard; thumbprint is matched
+          # against the local Windows cert store on the runner.
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          # Tauri auto-updater signing. Required so users actually get OTA
+          # updates — without these the bundler skips manifest generation
+          # and the updater plugin will fail to verify any future release.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'ElyHub ${{ github.ref_name }}'

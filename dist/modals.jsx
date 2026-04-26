@@ -64,6 +64,9 @@ const REPORT_REASONS = {
   ],
 };
 function ReportModal({ target, reports, onClose }) {
+  if (T.zodiac && window.ZodiacReportModal) {
+    return <window.ZodiacReportModal target={target} reports={reports} onClose={onClose}/>;
+  }
   // `target` is { kind, id, name }. `reports` is the useReports instance.
   const options = REPORT_REASONS[target.kind] || REPORT_REASONS.user;
   const [reason, setReason] = React.useState(options[0].id);
@@ -301,6 +304,10 @@ function ProfileOverflowMenu({ m, blocks, reports }) {
 }
 
 function GiftModal({ state, onClose, onSend, initialFriend }) {
+  // Zodiac gate — delegates to celestial variant. Original below untouched.
+  if (T.zodiac && window.ZodiacGiftModal) {
+    return <window.ZodiacGiftModal state={state} onClose={onClose} onSend={onSend} initialFriend={initialFriend}/>;
+  }
   const [friend, setFriend] = React.useState(initialFriend || null);
   const [amount, setAmount] = React.useState(500);
   const [note, setNote] = React.useState('');
@@ -511,6 +518,10 @@ function GiftModal({ state, onClose, onSend, initialFriend }) {
 // show the error and let the user retry. The live poll will pick up the new
 // aura on its next tick, so we don't need to optimistically deduct here.
 function RedeemModal({ reward, state, onClose, onConfirm }) {
+  // Zodiac gate — delegates to celestial variant. Original below untouched.
+  if (T.zodiac && window.ZodiacRedeemModal) {
+    return <window.ZodiacRedeemModal reward={reward} state={state} onClose={onClose} onConfirm={onConfirm}/>;
+  }
   const [stage, setStage] = React.useState('confirm');
   const [error, setError] = React.useState(null);
   const [sending, setSending] = React.useState(false);
@@ -830,6 +841,10 @@ function saveDismissed(set) {
 }
 
 function NotifDrawer({ onClose, library, reviews, follows, setView }) {
+  // Zodiac gate — delegates to celestial variant. Original below untouched.
+  if (T.zodiac && window.ZodiacNotifDrawer) {
+    return <window.ZodiacNotifDrawer onClose={onClose} library={library} reviews={reviews} follows={follows} setView={setView}/>;
+  }
   const meId = window.ME?.id || null;
   const feed = Array.isArray(window.AURA_FEED) ? window.AURA_FEED : [];
   const [lastSeen] = React.useState(getLastSeen);
@@ -1047,6 +1062,9 @@ function Kbd({ children }) {
   );
 }
 function ShortcutsModal({ onClose }) {
+  if (T.zodiac && window.ZodiacShortcutsModal) {
+    return <window.ZodiacShortcutsModal onClose={onClose}/>;
+  }
   // Esc to close — standard modal affordance.
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -1164,7 +1182,10 @@ function ShortcutsModal({ onClose }) {
 }
 
 // ────────────── Settings ──────────────
-function SettingsModal({ onClose, tweaks, tweak, resolvedTheme, updateCustom, selectCustom, addCustomSlot, deleteCustomSlot, updatePresetOverride }) {
+function SettingsModal({ onClose, tweaks, tweak, resolvedTheme, updateCustom, selectCustom, addCustomSlot, deleteCustomSlot, updatePresetOverride, library }) {
+  if (T.zodiac && window.ZodiacSettingsModal) {
+    return <window.ZodiacSettingsModal onClose={onClose} tweaks={tweaks} tweak={tweak} resolvedTheme={resolvedTheme} updateCustom={updateCustom} selectCustom={selectCustom} addCustomSlot={addCustomSlot} deleteCustomSlot={deleteCustomSlot} updatePresetOverride={updatePresetOverride} library={library}/>;
+  }
   const [section, setSection] = React.useState('account');
   const lang = window.ElyI18N?.getLang?.() || 'en';
   const setLang = (code) => window.ElyI18N?.setLang?.(code);
@@ -1173,6 +1194,7 @@ function SettingsModal({ onClose, tweaks, tweak, resolvedTheme, updateCustom, se
     { id: 'account',  label: t('settings.account'),       icon: <IUser/> },
     { id: 'notif',    label: t('settings.notifications'), icon: <IBell/> },
     { id: 'appear',   label: t('settings.appearance'),    icon: <ISparkle/> },
+    { id: 'downloads', label: 'Downloads',                icon: <IDownload/> },
     { id: 'about',    label: t('settings.about'),         icon: <ICheck/> },
   ];
 
@@ -1222,6 +1244,7 @@ function SettingsModal({ onClose, tweaks, tweak, resolvedTheme, updateCustom, se
         <div style={{ flex: 1, padding: 28, overflowY: 'auto' }}>
           {section === 'account' && <AccountPane onAfterSignOut={onClose}/>}
           {section === 'notif' && <NotifPane/>}
+          {section === 'downloads' && <DownloadsPane/>}
           {section === 'appear' && (
             <AppearancePane
               tweaks={tweaks}
@@ -1232,6 +1255,7 @@ function SettingsModal({ onClose, tweaks, tweak, resolvedTheme, updateCustom, se
               addCustomSlot={addCustomSlot}
               deleteCustomSlot={deleteCustomSlot}
               updatePresetOverride={updatePresetOverride}
+              library={library}
               lang={lang}
               setLang={setLang}
             />
@@ -1628,20 +1652,20 @@ function ThemeCanvas({ resolved, updateCustom, selectedId, setSelectedId, editab
 
 // Universal tile — renders a mini-preview of a theme config (preset or custom
 // slot) with a centered label strip. Active tile gets the accent glow.
-function ThemeTile({ config, label, active, onClick, accentColor, dim = false }) {
+function ThemeTile({ config, label, active, onClick, accentColor, dim = false, locked = false, lockHint }) {
   const pts = (config?.points || []).slice(0, 5);
   const glow = accentColor || config?.accentHi || config?.accent || T.accent;
   return (
     <button
       onClick={onClick}
-      title={label}
+      title={locked ? (lockHint || `${label} — locked`) : label}
       style={{
         padding: 0, borderRadius: T.r.md, cursor: 'pointer',
         border: active ? `1.5px solid ${glow}` : `0.5px solid ${T.glassBorder}`,
         background: 'transparent', overflow: 'hidden',
         boxShadow: active ? `0 0 20px ${glow}80` : 'none',
         position: 'relative', display: 'flex', flexDirection: 'column',
-        opacity: dim ? 0.85 : 1,
+        opacity: dim ? 0.85 : (locked ? 0.78 : 1),
       }}
     >
       <div style={{ height: 64, position: 'relative', overflow: 'hidden', background: config?.base || '#0A0D1A' }}>
@@ -1673,6 +1697,34 @@ function ThemeTile({ config, label, active, onClick, accentColor, dim = false })
         fontFamily: T.fontSans,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>{label}</div>
+      {/* Lock chip — solid backdrop + gold padlock. Sits over the preview so
+          users see the theme is locked without clicking. The wrapper button
+          still receives the click; AppearancePane decides what to do (open
+          the unlock listing instead of switching themes). */}
+      {locked && (
+        <div style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'linear-gradient(180deg, rgba(8,4,18,0.45) 0%, rgba(8,4,18,0.65) 100%)',
+        }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: '50%',
+            background: 'rgba(0,0,0,0.55)',
+            border: `1px solid ${withA(glow, 0.55)}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: glow, fontSize: 14,
+            boxShadow: `0 0 14px ${withA(glow, 0.45)}`,
+          }} aria-hidden>
+            {/* Inline padlock — keep glyph-free for fontless platforms */}
+            <svg width="12" height="14" viewBox="0 0 12 14" fill="none">
+              <path d="M2 6 V4.2 a4 4 0 0 1 8 0 V6" stroke={glow} strokeWidth="1.4" strokeLinecap="round"/>
+              <rect x="1.2" y="6" width="9.6" height="7" rx="1.6"
+                    fill="rgba(0,0,0,0.4)" stroke={glow} strokeWidth="1.2"/>
+              <circle cx="6" cy="9.4" r="0.9" fill={glow}/>
+            </svg>
+          </div>
+        </div>
+      )}
     </button>
   );
 }
@@ -1699,10 +1751,51 @@ function AddThemeTile({ onClick }) {
   );
 }
 
-function AppearancePane({ tweaks, tweak, resolved, updateCustom, selectCustom, addCustomSlot, deleteCustomSlot, updatePresetOverride, lang, setLang }) {
+function AppearancePane({ tweaks, tweak, resolved, updateCustom, selectCustom, addCustomSlot, deleteCustomSlot, updatePresetOverride, library, lang, setLang }) {
   const currentTheme = tweaks?.theme || 'nocturne';
   const isCustom = currentTheme === 'custom';
   const isWallpaperPreset = !!WALLPAPER_PRESETS[currentTheme];
+  // Resolve which presets are unlocked based on the user's library. A preset
+  // declares its gate via `unlock.kassa = '<product_id>'`; we map library
+  // entries → listings → kassa_product_id and check membership. No gate set =
+  // freely available. Using a Set so we can extend later (multi-product unlocks).
+  const ownedKassaProducts = React.useMemo(() => {
+    const set = new Set();
+    const listings = window.LISTINGS || [];
+    for (const it of (library?.items || [])) {
+      if (it.status !== 'active') continue;
+      const l = listings.find((x) => x.id === it.listingId);
+      const pid = l?.kassa_product_id || l?.kassaProductId;
+      if (pid) set.add(pid);
+    }
+    return set;
+  }, [library?.items]);
+  const isPresetLocked = (preset) => {
+    const need = preset?.unlock?.kassa;
+    return !!need && !ownedKassaProducts.has(need);
+  };
+  // When a locked tile is tapped, route to the unlock listing instead of
+  // switching the theme (which would silently fail anyway since resolveTheme
+  // just falls back to nocturne for unknown keys, but we'd rather make the
+  // intent explicit).
+  const handlePresetClick = (key, preset) => {
+    if (isPresetLocked(preset)) {
+      const need = preset.unlock.kassa;
+      const listing = (window.LISTINGS || []).find(
+        (x) => (x.kassa_product_id || x.kassaProductId) === need,
+      );
+      try {
+        ElyNotify?.toast?.({
+          text: listing
+            ? `${preset.name} unlocks with ${listing.title}`
+            : `${preset.name} requires the Hugin plugin`,
+          kind: 'info',
+        });
+      } catch {}
+      return;
+    }
+    tweak('theme', key);
+  };
   const [selectedPointId, setSelectedPointId] = React.useState(resolved?.points?.[0]?.id || null);
   const [zoom, setZoom] = React.useState(1);
   // Active slot (for rename / tile highlight). Slots live inside tweaks.customSlots.
@@ -1740,16 +1833,21 @@ function AppearancePane({ tweaks, tweak, resolved, updateCustom, selectCustom, a
           truth for theme switching; no separate pill strip. */}
       <div style={{ ...TY.micro, color: T.text3, marginBottom: 10 }}>{t('settings.theme') || 'Theme'}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
-        {Object.entries(THEME_PRESETS).map(([key, p]) => (
-          <ThemeTile
-            key={key}
-            config={p}
-            label={p.name}
-            active={currentTheme === key}
-            accentColor={p.accentHi}
-            onClick={() => tweak('theme', key)}
-          />
-        ))}
+        {Object.entries(THEME_PRESETS).map(([key, p]) => {
+          const locked = isPresetLocked(p);
+          return (
+            <ThemeTile
+              key={key}
+              config={p}
+              label={p.name}
+              active={currentTheme === key}
+              accentColor={p.accentHi}
+              locked={locked}
+              lockHint={locked ? `Unlocks with Hugin` : undefined}
+              onClick={() => handlePresetClick(key, p)}
+            />
+          );
+        })}
         {Object.entries(WALLPAPER_PRESETS).map(([key, p]) => (
           <ThemeTile
             key={key}
@@ -2209,6 +2307,118 @@ function NotifPane() {
   );
 }
 
+// Downloads pane — lets the user pick a default save folder. The save dialog
+// itself still goes through WebKit (no Tauri filesystem write yet), so this is
+// effectively a hint: the dialog defaults here, and the post-download "Show in
+// Finder" / "Open Folder" buttons reveal in this directory. We can wire actual
+// disk writes once the Rust download path is in.
+function DownloadsPane() {
+  const KEY = 'elyhub.downloadDir';
+  const [dir, setDir] = React.useState(() => {
+    try { return localStorage.getItem(KEY) || ''; } catch { return ''; }
+  });
+  const [resolving, setResolving] = React.useState(false);
+
+  // First mount: if no preference, resolve the OS default (~/Downloads) for
+  // display. We don't persist this — only an explicit pick writes localStorage.
+  const [defaultDir, setDefaultDir] = React.useState('');
+  React.useEffect(() => {
+    const inv = window.__TAURI__?.core?.invoke;
+    if (!inv) return;
+    inv('default_download_dir').then((p) => setDefaultDir(p || ''));
+  }, []);
+
+  const effective = dir || defaultDir;
+
+  const pick = async () => {
+    const inv = window.__TAURI__?.core?.invoke;
+    if (!inv) {
+      try { ElyNotify?.toast?.({ text: 'Folder picker only works in the desktop app', kind: 'warn' }); } catch {}
+      return;
+    }
+    setResolving(true);
+    try {
+      const chosen = await inv('pick_directory', { defaultPath: effective || null });
+      if (chosen) {
+        setDir(chosen);
+        try { localStorage.setItem(KEY, chosen); } catch {}
+        try { window.dispatchEvent(new Event('elyhub:download-dir-changed')); } catch {}
+      }
+    } catch (e) {
+      try { ElyNotify?.toast?.({ text: `Picker failed: ${e?.message || e}`, kind: 'warn' }); } catch {}
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  const reset = () => {
+    setDir('');
+    try { localStorage.removeItem(KEY); } catch {}
+    try { window.dispatchEvent(new Event('elyhub:download-dir-changed')); } catch {}
+  };
+
+  const reveal = () => {
+    const inv = window.__TAURI__?.core?.invoke;
+    if (inv && effective) inv('open_path', { path: effective }).catch(() => {});
+  };
+
+  return (
+    <div>
+      <h3 style={{ ...TY.h3, margin: '0 0 20px' }}>Downloads</h3>
+      <div style={{ ...TY.micro, color: T.text3, marginBottom: 6 }}>SAVE FOLDER</div>
+      <div style={{
+        padding: '10px 14px',
+        background: 'rgba(255,255,255,0.04)',
+        border: `0.5px solid ${T.glassBorder}`,
+        borderRadius: T.r.md,
+        ...TY.body, color: T.text2, fontSize: 13,
+        wordBreak: 'break-all', marginBottom: 4,
+        fontFamily: T.fontMono || 'ui-monospace, monospace',
+      }}>
+        {effective || '(no default — using browser default)'}
+      </div>
+      <div style={{ ...TY.small, color: T.text3, fontSize: 11, marginBottom: 14 }}>
+        {dir
+          ? 'Custom folder. The save dialog will default here.'
+          : 'Using your OS default — pick a folder to override.'}
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button onClick={pick} disabled={resolving} style={{
+          padding: '9px 16px', borderRadius: T.r.pill, border: 'none',
+          background: `linear-gradient(135deg, ${T.accentHi}, ${T.accent})`,
+          color: '#fff', cursor: resolving ? 'progress' : 'pointer',
+          fontFamily: T.fontSans, fontSize: 12, fontWeight: 600,
+          opacity: resolving ? 0.8 : 1,
+        }}>
+          {resolving ? 'Opening picker…' : 'Choose folder…'}
+        </button>
+        {effective && (
+          <button onClick={reveal} style={{
+            padding: '9px 16px', borderRadius: T.r.pill,
+            background: 'rgba(255,255,255,0.06)',
+            color: T.text, border: `0.5px solid ${T.glassBorder}`,
+            cursor: 'pointer', fontFamily: T.fontSans, fontSize: 12, fontWeight: 600,
+          }}>Open in Finder</button>
+        )}
+        {dir && (
+          <button onClick={reset} style={{
+            padding: '9px 16px', borderRadius: T.r.pill,
+            background: 'transparent',
+            color: T.text3, border: `0.5px solid ${T.glassBorder}`,
+            cursor: 'pointer', fontFamily: T.fontSans, fontSize: 12, fontWeight: 600,
+          }}>Reset to default</button>
+        )}
+      </div>
+      <div style={{ ...TY.small, color: T.text3, fontSize: 11, marginTop: 24, lineHeight: 1.6 }}>
+        <strong style={{ color: T.text2 }}>Note —</strong> WebKit's save dialog still
+        asks where to save each file. This setting controls where it points to
+        first, and where “Show in Finder” / “Open Folder” jump to after a
+        download finishes. Direct-to-disk saving lands in a future update.
+      </div>
+    </div>
+  );
+}
+
 function Field({ label, value, readOnly, onChange, placeholder }) {
   return (
     <div style={{ marginBottom: 14 }}>
@@ -2419,6 +2629,47 @@ function AccountPane({ onAfterSignOut }) {
 }
 
 function Toggle({ label, sub, value, onChange }) {
+  // Zodiac variant — squared switch with a sliding gold token instead of the
+  // pill+circle. The label/divider style differs too so the section reads as
+  // engraved rather than glass.
+  if (T.zodiac) {
+    const Z = window.Z, ZTY = window.ZTY;
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+        padding: '14px 0', borderBottom: `1px solid ${Z.hair}`,
+      }}>
+        <div>
+          <div style={{ ...ZTY.body, color: Z.parch, fontStyle: 'italic', fontSize: 15 }}>{label}</div>
+          {sub && <div style={{ ...ZTY.small, color: Z.text3, fontStyle: 'italic', marginTop: 2 }}>{sub}</div>}
+        </div>
+        <button onClick={() => onChange(!value)} aria-pressed={value} style={{
+          width: 46, height: 22, position: 'relative', cursor: 'pointer', padding: 0,
+          background: value ? `linear-gradient(180deg, ${Z.ink3}, ${Z.ink2})` : Z.ink3,
+          border: `1px solid ${value ? Z.gold : Z.hair2}`,
+          boxShadow: value ? `inset 0 0 8px ${Z.goldGlow}` : 'none',
+          transition: 'all .2s',
+          flexShrink: 0,
+          borderRadius: 0,
+        }}>
+          {/* Sliding token (gold leaf chip when on, ink chip when off) */}
+          <div style={{
+            position: 'absolute', top: 2, bottom: 2,
+            left: value ? 24 : 2,
+            width: 18,
+            background: value ? `linear-gradient(180deg, ${Z.goldHi}, ${Z.gold} 50%, ${Z.goldLo})` : Z.ink4,
+            border: `1px solid ${value ? Z.goldLo : Z.hair2}`,
+            transition: 'left .2s cubic-bezier(.4,0,.2,1)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {value && (
+              <span style={{ fontSize: 8, color: Z.ink, fontFamily: Z.fontCaps, fontWeight: 700 }}>✦</span>
+            )}
+          </div>
+        </button>
+      </div>
+    );
+  }
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
@@ -2449,6 +2700,10 @@ function Toggle({ label, sub, value, onChange }) {
 
 // ────────────── Level-Up Takeover ──────────────
 function LevelUpTakeover({ level, onClose }) {
+  // Zodiac gate — delegates to celestial variant. Original below untouched.
+  if (T.zodiac && window.ZodiacLevelUpTakeover) {
+    return <window.ZodiacLevelUpTakeover level={level} onClose={onClose}/>;
+  }
   const [stage, setStage] = React.useState(0);
   React.useEffect(() => {
     const t1 = setTimeout(() => setStage(1), 120);
@@ -2565,3 +2820,9 @@ function LevelUpTakeover({ level, onClose }) {
     </div>
   );
 }
+
+// Expose panes for the Zodiac SettingsModal variant in dist/zodiac/views3.jsx
+// — its zodiac-themed shell renders the same panes inside ink+gold chrome.
+Object.assign(window, {
+  AccountPane, NotifPane, DownloadsPane, AppearancePane,
+});

@@ -1,6 +1,46 @@
 // ElyHub — app root. Routes views and composes the Shell.
 
 
+// ────────────── Dev stub: Hugin listing ──────────────
+// Local-only escape hatch so we can test the Zodiac theme unlock without
+// publishing the real Hugin listing through Kassa's pipeline yet. Toggled by
+// `localStorage.setItem('ely:dev:stub-hugin', '1')`. The stub is pushed into
+// `window.LISTINGS` early so AppearancePane's gate (which reads LISTINGS
+// + library) sees a matching `kassa_product_id='gleipnir'` entry. Remove the
+// flag (or `localStorage.removeItem('ely:dev:stub-hugin')`) to drop it.
+(() => {
+  const STUB = {
+    id: 'l-hugin-dev', type: 'plugin', sellerId: 'kassa',
+    title: 'Hugin (dev stub)', tagline: 'local theme unlock',
+    price: 30000, billing: 'monthly', tags: ['hugin'],
+    kassa_product_id: 'gleipnir',
+  };
+  const inject = () => {
+    if (localStorage.getItem('ely:dev:stub-hugin') !== '1') return;
+    const L = (window.LISTINGS = window.LISTINGS || []);
+    if (L.some((l) => (l.kassa_product_id || l.kassaProductId) === 'gleipnir')) return;
+    L.push(STUB);
+  };
+  try {
+    inject();
+    // The /listings poll wipes window.LISTINGS via `.length = 0` on every
+    // tick (see data.jsx fetchListingsOnce), so we re-inject after each
+    // live update. Polls notify via __subscribeLive — wait for it then sub.
+    const hookOnce = () => {
+      if (typeof window.__subscribeLive === 'function') {
+        window.__subscribeLive(inject);
+        return true;
+      }
+      return false;
+    };
+    if (!hookOnce()) {
+      const id = setInterval(() => { if (hookOnce()) clearInterval(id); }, 200);
+      setTimeout(() => clearInterval(id), 10000);
+    }
+  } catch {}
+})();
+
+
 // ────────────── App ──────────────
 
 // ──────────────── Login gate ────────────────
@@ -296,9 +336,16 @@ function AuthedApp() {
   // this flips true and the modal renders. markWelcomed() inside the modal
   // persists to localStorage, so subsequent renders read it as already welcomed.
   const [welcomeTick, setWelcomeTick] = React.useState(0);
+  // Onboarding-done check — read every render so it flips true the moment
+  // the user finishes / skips the tour (which sets the localStorage key).
+  // The Welcome modal is gated on this so the two flows never overlap:
+  // tour runs first, modal appears after.
+  const onboardingDone = (() => {
+    try { return localStorage.getItem('elyhub.onboarded.v1') === '1'; } catch { return false; }
+  })();
   const showWelcome =
     ME && ME.id && !ME.isPreview && ME.id !== '__preview__' &&
-    !wasWelcomed(ME.id);
+    !wasWelcomed(ME.id) && onboardingDone;
   // When the user signs out/in, bump the tick so a fresh ME triggers a re-check
   // without waiting for a live poll.
   React.useEffect(() => {
@@ -346,6 +393,50 @@ function AuthedApp() {
   const reports = useReports();
   const blocks = useBlocks();
   const tour = useOnboarding();
+
+  // Route-driven Zodiac swap — wraps setView so navigation that crosses the
+  // Hugin/zodiac boundary fires the curtain BEFORE the actual view change.
+  // The flow: click → curtain dispatches → 700ms wait (curtain reaches full
+  // opacity) → setView + previewTheme happen behind the curtain → curtain
+  // fades out, revealing the new world. Without this intercept the view
+  // would change first and the user would see the new content briefly
+  // before the curtain rose.
+  const transientThemeRef = React.useRef(null);
+  const wrappedSetView = React.useCallback((nextView) => {
+    const goingToHugin = nextView?.id === 'zephyro';
+    const leavingHugin = view.id === 'zephyro' && !goingToHugin;
+    const savedTheme = window.savedThemeKey || 'blue';
+    const isOnZodiacSaved = savedTheme === 'zodiac';
+
+    // No transition needed: not crossing Hugin, or user is permanently on zodiac.
+    if (isOnZodiacSaved || (!goingToHugin && !leavingHugin)) {
+      setView(nextView);
+      return;
+    }
+
+    const direction = goingToHugin ? 'in' : 'out';
+    const targetTheme = goingToHugin ? 'zodiac' : (transientThemeRef.current || savedTheme);
+
+    // Fire curtain immediately (no mutation).
+    try {
+      window.dispatchEvent(new CustomEvent('ely:theme-transition', {
+        detail: { from: T.theme, to: targetTheme, direction },
+      }));
+    } catch {}
+
+    // Wait for curtain to reach full opacity (~760ms = 60ms stage stagger
+    // + 700ms opacity transition), then swap view + theme silently.
+    setTimeout(() => {
+      if (goingToHugin) transientThemeRef.current = savedTheme;
+      else if (leavingHugin) transientThemeRef.current = null;
+      setView(nextView);
+      // Silent token flip + state flip — curtain already covers, no need to
+      // re-fire the ceremony event.
+      try { T.__skipNextTransition = true; } catch {}
+      window.previewTheme?.(targetTheme);
+    }, 760);
+  }, [view.id]);
+
   const [publishOpen, setPublishOpen] = React.useState(false);
   const [editingListing, setEditingListing] = React.useState(null);
   const openPublish = () => { setEditingListing(null); setPublishOpen(true); };
@@ -369,6 +460,32 @@ function AuthedApp() {
     }
     const finalPrice = Math.max(0, (listing.price || 0) - discount);
     if (state.aura < finalPrice) return { ok: false, err: 'insufficient' };
+
+    // Backend mirror — fire-and-forget a real purchase if this listing
+    // exists on the server. We do this BEFORE touching local state so
+    // server-side errors (insufficient_aura, level_too_low, listing_removed)
+    // can be surfaced. If it's a legacy/mock listing the backend doesn't
+    // know about, the 404 is expected — swallow it and proceed locally.
+    //
+    // We don't await inside purchaseListing (callers treat it as sync),
+    // but we kick off the request and log outcomes so the console tells
+    // the whole story when debugging a specific purchase.
+    if (window.ElyAPI?.post && window.ElyAPI.isSignedIn?.()) {
+      window.ElyAPI.post(`/listings/${listing.id}/purchase`).then((res) => {
+        if (res?.already_owned) {
+          console.log('[purchase] backend: already owned', listing.id);
+        } else if (res?.ok) {
+          console.log('[purchase] backend debit ok', { id: listing.id, purchase_id: res.purchase_id });
+        }
+      }).catch((err) => {
+        // Parse the error — ElyAPI.post throws Error with message like
+        // "HTTP 402 insufficient_aura" or "HTTP 404 listing_not_found".
+        // Every real listing is backend-owned now. Any failure is a real
+        // failure — surface it in the console so we notice in prod logs.
+        console.warn('[purchase] backend failed', listing.id, err?.message || err);
+      });
+    }
+
     const entry = library.purchase({ ...listing, price: finalPrice });
     setState((s) => ({ ...s, aura: Math.max(0, s.aura - finalPrice) }));
     if (appliedCoupon) coupons.recordUse(appliedCoupon.code);
@@ -404,32 +521,40 @@ function AuthedApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [library.items, state.aura]);
 
-  // Custom view router — needs to handle dynamic ids like 'plugin:l-kassahub'
+  // Custom view router — needs to handle dynamic ids like 'plugin:l-zephyro'
   // alongside the static map below.
   let mainView;
   if (view.id?.startsWith('plugin:')) {
     const listingId = view.id.slice('plugin:'.length);
-    mainView = <PluginPanelView listingId={listingId} library={library} setView={setView}/>;
+    mainView = <PluginPanelView listingId={listingId} library={library} setView={wrappedSetView}/>;
   } else {
     const contents = {
-      home:        <HomeView state={state} setState={setState} setView={setView} onQuick={onQuick}/>,
+      home:        <HomeView state={state} setState={setState} setView={wrappedSetView} onQuick={onQuick}/>,
       leaderboard: <LeaderboardView state={state} focusId={view.focusId} onQuick={onQuick}/>,
-      store:       <MarketHomeView state={state} setView={setView} onQuick={onQuick} focusId={view.focusId} library={library} wishlist={wishlist} recent={recent} blocks={blocks}/>,
-      discover:    <DiscoverView state={state} setView={setView} wishlist={wishlist} follows={follows} recent={recent} library={library} blocks={blocks}/>,
-      listing:     <ListingDetailView state={state} setView={setView} onQuick={onQuick} focusId={view.focusId} library={library} purchaseListing={purchaseListing} reviews={reviews} wishlist={wishlist} follows={follows} recent={recent} messages={messages} coupons={coupons} reports={reports} blocks={blocks}/>,
-      library:     <MyLibraryView state={state} setView={setView} library={library} purchaseListing={purchaseListing}/>,
+      store:       <MarketHomeView state={state} setView={wrappedSetView} onQuick={onQuick} focusId={view.focusId} library={library} wishlist={wishlist} recent={recent} blocks={blocks} onPublish={openPublish}/>,
+      discover:    <DiscoverView state={state} setView={wrappedSetView} wishlist={wishlist} follows={follows} recent={recent} library={library} blocks={blocks}/>,
+      listing:     <ListingDetailView state={state} setView={wrappedSetView} onQuick={onQuick} focusId={view.focusId} library={library} purchaseListing={purchaseListing} reviews={reviews} wishlist={wishlist} follows={follows} recent={recent} messages={messages} coupons={coupons} reports={reports} blocks={blocks}/>,
+      library:     <MyLibraryView state={state} setView={wrappedSetView} library={library} purchaseListing={purchaseListing}/>,
       rewards:     <StoreView state={state} onQuick={onQuick} focusId={view.focusId}/>,
       claim:       <StoreView state={state} onQuick={onQuick} focusId={view.focusId}/>,
-      kassahub:    <KassaHubView state={state} setView={setView} library={library} purchaseListing={purchaseListing}/>,
-      dashboard:   <CreatorDashboardView state={state} setView={setView} publishing={publishing} onEdit={openEdit} reviews={reviews} messages={messages} coupons={coupons}/>,
+      zephyro:     <ZephyroView state={state} setView={wrappedSetView} library={library} purchaseListing={purchaseListing}/>,
+      licenses:    window.MyLicensesView ? <window.MyLicensesView/> : <div style={{ padding: 40, color: T.text3 }}>Loading licenses…</div>,
+      maker:       window.MakerView ? <window.MakerView/> : <div style={{ padding: 40, color: T.text3 }}>Loading maker studio…</div>,
+      dashboard:   <CreatorDashboardView state={state} setView={wrappedSetView} publishing={publishing} onEdit={openEdit} reviews={reviews} messages={messages} coupons={coupons}/>,
       trophies:    <TrophiesView focusId={view.focusId}/>,
-      saved:       <SavedView state={state} setView={setView} wishlist={wishlist}/>,
-      feed:        <FeedView state={state} setView={setView} follows={follows} wishlist={wishlist}/>,
-      messages:    <MessagesView state={state} setView={setView} messages={messages} threadId={view.threadId} blocks={blocks} reports={reports}/>,
-      collection:  <CollectionView state={state} setView={setView} collectionId={view.collectionId} wishlist={wishlist}/>,
+      saved:       <SavedView state={state} setView={wrappedSetView} wishlist={wishlist}/>,
+      feed:        <FeedView state={state} setView={wrappedSetView} follows={follows} wishlist={wishlist}/>,
+      members:     <MembersView state={state} setView={wrappedSetView} messages={messages}/>,
+      messages:    <MessagesView state={state} setView={wrappedSetView} messages={messages} threadId={view.threadId} blocks={blocks} reports={reports}/>,
+      collection:  <CollectionView state={state} setView={wrappedSetView} collectionId={view.collectionId} wishlist={wishlist}/>,
       profile:     (view.userId && view.userId !== (window.ME?.id || 'me'))
-                     ? <CreatorProfileView userId={view.userId} state={state} setView={setView} onQuick={onQuick} reviews={reviews} wishlist={wishlist} follows={follows} messages={messages} reports={reports} blocks={blocks}/>
-                     : <ProfileView state={state} onQuick={onQuick} setView={setView} onPublish={openPublish} onEdit={openEdit} publishing={publishing} wishlist={wishlist}/>,
+                     ? <CreatorProfileView userId={view.userId} state={state} setView={wrappedSetView} onQuick={onQuick} reviews={reviews} wishlist={wishlist} follows={follows} messages={messages} reports={reports} blocks={blocks}/>
+                     : <ProfileView state={state} onQuick={onQuick} setView={wrappedSetView} onPublish={openPublish} onEdit={openEdit} publishing={publishing} wishlist={wishlist}/>,
+      // Kassa admin panel — 3 tabs (Licenses/Clients/Grant). Server gates by
+      // role via /admin/whoami; the nav item only appears when the server
+      // accepts the user. AdminView itself re-checks role and falls back to a
+      // 403-style empty state if called directly (e.g. via deep link).
+      admin:       window.AdminView ? <window.AdminView/> : <div style={{ padding: 40, color: T.text3 }}>Loading admin…</div>,
     };
     mainView = contents[view.id] || contents.home;
   }
@@ -465,12 +590,12 @@ function AuthedApp() {
           zIndex: 9999, cursor: 'default',
         }}
       />
-      <Shell view={view} setView={setView} state={state} onQuick={onQuick} resolvedTheme={resolvedTheme} library={library} wishlist={wishlist} follows={follows} reviews={reviews} messages={messages}>
+      <Shell view={view} setView={wrappedSetView} state={state} onQuick={onQuick} resolvedTheme={resolvedTheme} library={library} wishlist={wishlist} follows={follows} reviews={reviews} messages={messages}>
         {mainView}
       </Shell>
       {giftOpen && <GiftModal state={state} initialFriend={typeof giftOpen === 'object' ? giftOpen : null} onClose={() => setGiftOpen(false)} onSend={() => { /* bot's transferXp is authoritative; data.jsx poll will update ME.aura */ }}/>}
       {redeem && <RedeemModal reward={redeem} state={state} onClose={() => setRedeem(null)} onConfirm={() => { /* bot's worker is authoritative; data.jsx poll will update ME.aura */ }}/>}
-      {settingsOpen && <SettingsModal tweaks={tweaks} tweak={tweak} resolvedTheme={resolvedTheme} updateCustom={updateCustom} selectCustom={selectCustom} addCustomSlot={addCustomSlot} deleteCustomSlot={deleteCustomSlot} updatePresetOverride={updatePresetOverride} onClose={() => setSettingsOpen(false)}/>}
+      {settingsOpen && <SettingsModal tweaks={tweaks} tweak={tweak} resolvedTheme={resolvedTheme} updateCustom={updateCustom} selectCustom={selectCustom} addCustomSlot={addCustomSlot} deleteCustomSlot={deleteCustomSlot} updatePresetOverride={updatePresetOverride} library={library} onClose={() => setSettingsOpen(false)}/>}
       {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)}/>}
       {levelUp && <LevelUpTakeover level={levelUp} onClose={() => setLevelUp(null)}/>}
       <PublishListingModal
@@ -483,6 +608,7 @@ function AuthedApp() {
       {showWelcome && <WelcomeModal me={ME} onClose={() => setWelcomeTick((x) => x + 1)}/>}
       {tweaksOpen && <TweaksPanel tweaks={tweaks} tweak={tweak} onQuick={onQuick} onClose={() => setTweaksOpen(false)}/>}
       <ToastStack/>
+      <DownloadStack/>
       <OnboardingTour tour={tour}/>
     </>
   );
@@ -504,6 +630,10 @@ function ToastStack() {
     });
   }, []);
   if (!toasts.length) return null;
+  // Zodiac gate — delegate to celestial toast variant. Original below intact.
+  if (T.zodiac && window.ZodiacToastStack) {
+    return <window.ZodiacToastStack toasts={toasts}/>;
+  }
   return (
     <div role="status" aria-live="polite" aria-atomic="false" style={{
       position: 'fixed', top: 20, right: 20, zIndex: 200,

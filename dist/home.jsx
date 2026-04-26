@@ -94,6 +94,12 @@ function todayKickerParts() {
 }
 
 function HomeView({ state, setState, setView, onQuick }) {
+  // Zodiac theme gate — when active, delegate to the celestial variant in
+  // dist/zodiac/views.jsx. Original HomeView below is untouched for every
+  // other theme.
+  if (T.zodiac && window.ZodiacHomeView) {
+    return <window.ZodiacHomeView state={state} setState={setState} setView={setView} onQuick={onQuick}/>;
+  }
   // Daily claim state is per-kind: 'tag' or 'booster'. Tracks in-flight
   // request + any error message returned by the bot worker (e.g. the user
   // stopped boosting, removed the tag, or Turso was unreachable).
@@ -865,6 +871,10 @@ function JumpToMeButton({ members }) {
 }
 
 function LeaderboardView({ state, focusId, onQuick }) {
+  // Zodiac gate — delegates to the celestial variant. Original below untouched.
+  if (T.zodiac && window.ZodiacLeaderboardView) {
+    return <window.ZodiacLeaderboardView state={state} focusId={focusId} onQuick={onQuick}/>;
+  }
   useFocusHighlight(focusId);
   // Only categories we actually have data for: Overall (total xp) and Gym
   // (gym_posts). Deals and Voice were fake multipliers before — ripped them
@@ -1020,6 +1030,10 @@ function deriveTrophies(me) {
 }
 
 function TrophiesView({ focusId }) {
+  // Zodiac gate — delegates to the celestial variant. Original below untouched.
+  if (T.zodiac && window.ZodiacTrophiesView) {
+    return <window.ZodiacTrophiesView focusId={focusId}/>;
+  }
   useFocusHighlight(focusId);
   // Re-read ME on every render. The App-level __subscribeLive hook force-updates
   // this component whenever window.ME is patched by data.jsx, so this stays in

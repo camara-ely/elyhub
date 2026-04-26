@@ -101,6 +101,14 @@ function CouponsPanel({ coupons, listings }) {
   const [maxUses, setMaxUses] = React.useState('');
   const [expiresDays, setExpiresDays] = React.useState('');
   const [notes, setNotes] = React.useState('');
+  // Arm+commit for delete (window.confirm is a no-op in Tauri's WKWebView —
+  // see shell.jsx:769). First click arms the code; second within 3s commits.
+  const [armedDeleteCode, setArmedDeleteCode] = React.useState(null);
+  React.useEffect(() => {
+    if (!armedDeleteCode) return;
+    const t = setTimeout(() => setArmedDeleteCode(null), 3000);
+    return () => clearTimeout(t);
+  }, [armedDeleteCode]);
 
   const resetForm = () => {
     setCode(''); setPercentOff('15'); setListingId('');
@@ -341,18 +349,24 @@ function CouponsPanel({ coupons, listings }) {
                   >{c.disabled ? 'Enable' : 'Pause'}</button>
                   <button
                     onClick={() => {
-                      if (!confirm(`Delete code ${c.code}? This can't be undone.`)) return;
+                      if (armedDeleteCode !== c.code) {
+                        setArmedDeleteCode(c.code);
+                        try { ElyNotify?.toast?.({ text: `Click again to delete ${c.code}`, kind: 'warn' }); } catch {}
+                        return;
+                      }
+                      setArmedDeleteCode(null);
                       coupons.remove(c.code);
                     }}
-                    title="Delete"
+                    title={armedDeleteCode === c.code ? 'Click again to confirm' : 'Delete'}
                     style={{
                       padding: '3px 9px', borderRadius: T.r.pill,
-                      background: 'rgba(255,255,255,0.04)',
-                      border: `0.5px solid ${T.glassBorder}`,
-                      color: T.text2, cursor: 'pointer',
+                      background: armedDeleteCode === c.code ? 'rgba(220,50,70,0.9)' : 'rgba(255,255,255,0.04)',
+                      border: `0.5px solid ${armedDeleteCode === c.code ? 'rgba(255,160,170,0.6)' : T.glassBorder}`,
+                      color: armedDeleteCode === c.code ? '#fff' : T.text2, cursor: 'pointer',
                       fontFamily: T.fontSans, fontSize: 10,
+                      transition: 'background 120ms ease, color 120ms ease',
                     }}
-                  >Delete</button>
+                  >{armedDeleteCode === c.code ? 'Confirm' : 'Delete'}</button>
                 </div>
               </div>
             );
@@ -369,11 +383,14 @@ function CouponsPanel({ coupons, listings }) {
 // items. No backend — aura earned is computed client-side as sales × price,
 // matching the same approximation used by `getCreatorStats`.
 function CreatorDashboardView({ state, setView, publishing, onEdit, reviews, messages, coupons }) {
+  if (T.zodiac && window.ZodiacCreatorDashboardView) {
+    return <window.ZodiacCreatorDashboardView state={state} setView={setView} publishing={publishing} onEdit={onEdit} reviews={reviews} messages={messages} coupons={coupons}/>;
+  }
   const me = window.ME || {};
   // Pull version so the panel refreshes after publish/unpublish.
   const _v = publishing?.version;
   const _rv = reviews?.version;
-  const listings = (window.LISTINGS || []).filter((l) => l.sellerId === (me.id || 'me'));
+  const listings = dedupTieredListings((window.LISTINGS || []).filter((l) => l.sellerId === (me.id || 'me')));
 
   if (!listings.length) {
     return (
@@ -675,11 +692,26 @@ function CreatorDashboardView({ state, setView, publishing, onEdit, reviews, mes
 }
 
 function ProfileView({ state, onQuick, setView, onPublish, onEdit, publishing, wishlist }) {
+  // Zodiac gate — delegates to the celestial variant. Original below untouched.
+  if (T.zodiac && window.ZodiacProfileView) {
+    return <window.ZodiacProfileView state={state} onQuick={onQuick} setView={setView} onPublish={onPublish} onEdit={onEdit} publishing={publishing} wishlist={wishlist}/>;
+  }
   const me = window.ME || {};
   // Read publishing.version to re-derive when user publishes/unpublishes.
   const _v = publishing?.version;
   const myListings = (window.LISTINGS || []).filter((l) => l.sellerId === me.id);
   const myStats = myListings.length ? getCreatorStats(me.id) : null;
+  // Two-step unpublish confirm. Tauri's WKWebView silently no-ops
+  // window.confirm(), so we can't use the native dialog. Instead: first
+  // click arms the button (id lands in this state + auto-clears after 3s),
+  // second click actually removes. The button swaps label/colour when armed
+  // so the user sees exactly what'll happen.
+  const [armedUnpublishId, setArmedUnpublishId] = React.useState(null);
+  React.useEffect(() => {
+    if (!armedUnpublishId) return;
+    const t = setTimeout(() => setArmedUnpublishId(null), 3000);
+    return () => clearTimeout(t);
+  }, [armedUnpublishId]);
   const voiceHours = Math.floor((me.voiceSeconds || 0) / 3600);
   const voiceMins  = Math.floor(((me.voiceSeconds || 0) % 3600) / 60);
   // Bio is saved to localStorage by the Account settings pane. Read it on
@@ -895,11 +927,15 @@ function ProfileView({ state, onQuick, setView, onPublish, onEdit, publishing, w
                   compact
                   wishlist={wishlist}
                 />
-                {publishing && l.id.startsWith('user-') && (
+                {publishing && (
                   <div style={{
                     position: 'absolute', top: 8, right: 8, zIndex: 2,
                     display: 'flex', gap: 6,
                   }}>
+                    {/* Edit only works for local `user-…` listings — the backend
+                        doesn't have a PATCH route yet, so hide the pencil for
+                        server-owned ids (uuids). Unpublish works for both. */}
+                    {l.id.startsWith('user-') && (
                     <button
                       onClick={(e) => { e.stopPropagation(); onEdit?.(l); }}
                       title="Edit"
@@ -916,24 +952,36 @@ function ProfileView({ state, onQuick, setView, onPublish, onEdit, publishing, w
                         <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
                       </svg>
                     </button>
+                    )}
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        if (confirm(`Unpublish "${l.title}"?`)) {
-                          publishing.unpublish(l.id);
+                        // First click: arm. Second click within 3s: commit.
+                        if (armedUnpublishId !== l.id) {
+                          setArmedUnpublishId(l.id);
+                          try { ElyNotify?.toast?.({ text: `Click × again to unpublish "${l.title}"`, kind: 'info' }); } catch {}
+                          return;
+                        }
+                        setArmedUnpublishId(null);
+                        try {
+                          await publishing.unpublish(l.id);
                           try { ElyNotify?.toast?.({ text: `${l.title} unpublished`, kind: 'info' }); } catch {}
+                        } catch (err) {
+                          try { ElyNotify?.toast?.({ text: `Unpublish failed: ${err?.message || 'error'}`, kind: 'error' }); } catch {}
                         }
                       }}
-                      title="Unpublish"
+                      title={armedUnpublishId === l.id ? 'Click again to confirm' : 'Unpublish'}
                       aria-label="Unpublish listing"
                       style={{
                         width: 26, height: 26, borderRadius: '50%',
-                        background: 'rgba(8,10,18,0.75)',
+                        background: armedUnpublishId === l.id ? 'rgba(220,50,70,0.9)' : 'rgba(8,10,18,0.75)',
                         backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
-                        border: `0.5px solid ${T.glassBorder}`,
-                        color: T.text2, cursor: 'pointer',
-                        fontFamily: T.fontSans, fontSize: 14, lineHeight: 1,
+                        border: `0.5px solid ${armedUnpublishId === l.id ? 'rgba(255,160,170,0.6)' : T.glassBorder}`,
+                        color: armedUnpublishId === l.id ? '#fff' : T.text2,
+                        cursor: 'pointer',
+                        fontFamily: T.fontSans, fontSize: 14, lineHeight: 1, fontWeight: 600,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        transition: 'background 120ms ease, color 120ms ease',
                       }}
                     >×</button>
                   </div>
@@ -962,6 +1010,9 @@ function memberSinceLabel(memberId) {
 }
 
 function CreatorProfileView({ userId, state, setView, onQuick, reviews, wishlist, follows, messages, reports, blocks }) {
+  if (T.zodiac && window.ZodiacCreatorProfileView) {
+    return <window.ZodiacCreatorProfileView userId={userId} state={state} setView={setView} onQuick={onQuick} reviews={reviews} wishlist={wishlist} follows={follows} messages={messages} reports={reports} blocks={blocks}/>;
+  }
   const m = (window.MEMBERS || []).find((x) => x.id === userId);
   const [tab, setTab] = React.useState('listings');
   if (!m) {
@@ -972,7 +1023,7 @@ function CreatorProfileView({ userId, state, setView, onQuick, reviews, wishlist
       </Glass>
     );
   }
-  const listings = (window.LISTINGS || []).filter((l) => l.sellerId === m.id);
+  const listings = dedupTieredListings((window.LISTINGS || []).filter((l) => l.sellerId === m.id));
   const stats = listings.length ? getCreatorStats(m.id) : null;
   const joined = memberSinceLabel(m.id);
   // Reviews received across all listings — used by the Reviews tab + the "avg

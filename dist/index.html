@@ -6,16 +6,26 @@
 <title>ElyHub — Glass</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=Cormorant+SC:wght@400;500;600;700&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Cinzel:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
   * { box-sizing: border-box; }
   html, body, #root { margin: 0; padding: 0; min-height: 100%; }
+  /* Smooth scroll for anchor jumps and programmatic scrollIntoView. Mouse
+     wheel + trackpad are interpolated via JS in app.jsx for a momentum feel. */
+  html { scroll-behavior: smooth; }
   body {
     background: #05060A;
     color: #fff;
     font-family: "Inter Tight", -apple-system, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     overflow-x: hidden;
+    overscroll-behavior: none;
+  }
+  /* Soften the scroll on every overflow:auto region (sidebar + main pane in
+     the Shell, modals, drawers). scroll-behavior is inherited but we set it
+     explicitly on common scrollable selectors to be safe. */
+  main, aside, [class*="scroll"], .no-scrollbar {
+    scroll-behavior: smooth;
   }
   input::placeholder { color: rgba(255,255,255,0.38); }
   button { font-family: inherit; }
@@ -23,6 +33,13 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
   ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+  /* `.no-scrollbar` — keep an element scrollable but invisibly so. Used by
+     the Shell's sidebar + main panes so users get independent scroll regions
+     without two visible scrollbars chopping up the chrome. Works in WebKit
+     (macOS Tauri webview), Chromium (Windows WebView2), and Firefox. */
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
   /* Accessibility — visible keyboard focus.
      We suppress the default browser outline only for pointer-driven focus
@@ -104,6 +121,60 @@
       location.reload();
     }
   });
+
+  // ──── Scroll tail (instant + post-input glide) ────
+  // Each wheel event applies its full delta to scrollTop IMMEDIATELY (1:1
+  // native feel — no input lag). It also captures the delta as velocity.
+  // The rAF loop continues that velocity AFTER the user stops scrolling,
+  // decaying it via FRICTION for a soft tail. Within the same frame as a
+  // wheel event the tail is skipped (no double-apply).
+  // Disable: localStorage.setItem('ely:no-smooth','1')
+  (function scrollInertia() {
+    if (typeof window === 'undefined') return;
+    try { if (localStorage.getItem('ely:no-smooth') === '1') return; } catch {}
+    const findScroller = (start) => {
+      let el = start;
+      while (el && el !== document.body) {
+        const oy = getComputedStyle(el).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) return el;
+        el = el.parentElement;
+      }
+      return null;
+    };
+    const FRICTION    = 0.90;  // per-frame v multiplier (tail length)
+    const TAIL_WEIGHT = 0.45;  // capture (last delta * this) → tail velocity
+    const STOP        = 0.4;
+    const state = new WeakMap();
+    const tick = (el) => {
+      const s = state.get(el);
+      if (!s) return;
+      // Wheel fired in the last ~16ms → user is still actively scrolling.
+      // Instant apply already happened; don't double via tail.
+      if (performance.now() - s.lastWheel < 18) {
+        s.raf = requestAnimationFrame(() => tick(el));
+        return;
+      }
+      if (Math.abs(s.v) < STOP) { s.v = 0; s.raf = 0; return; }
+      el.scrollTop += s.v;
+      s.v *= FRICTION;
+      s.raf = requestAnimationFrame(() => tick(el));
+    };
+    window.addEventListener('wheel', (e) => {
+      if (e.ctrlKey || e.metaKey) return;
+      const el = findScroller(e.target);
+      if (!el) return;
+      e.preventDefault();
+      const pxPerUnit = e.deltaMode === 1 ? 40 : (e.deltaMode === 2 ? el.clientHeight : 1);
+      const dy = e.deltaY * pxPerUnit;
+      // Apply delta INSTANTLY — full strength, native feel.
+      el.scrollTop += dy;
+      let s = state.get(el);
+      if (!s) { s = { v: 0, lastWheel: 0, raf: 0 }; state.set(el, s); }
+      s.v = dy * TAIL_WEIGHT;
+      s.lastWheel = performance.now();
+      if (!s.raf) s.raf = requestAnimationFrame(() => tick(el));
+    }, { passive: false });
+  })();
 </script>
 <!-- React is vendored locally so dev works offline (and without unpkg as a
      runtime dependency). Babel-standalone stays on CDN in dev only — it's
@@ -123,6 +194,11 @@
 <script type="text/babel" src="auth.jsx"></script>
 <script type="text/babel" src="data.jsx"></script>
 <script type="text/babel" src="ui.jsx"></script>
+<!-- Zodiac theme tokens + primitives. Inert until T.zodiac is true; nothing
+     in the host app references Z* names directly. Loaded before theme.jsx so
+     applyResolvedTheme can read window.Z when injecting zodiac tokens. -->
+<script type="text/babel" src="zodiac/tokens-zodiac.jsx"></script>
+<script type="text/babel" src="zodiac/ui-zodiac.jsx"></script>
 <script type="text/babel" src="theme.jsx"></script>
 <script type="text/babel" src="shell.jsx"></script>
 <script type="text/babel" src="state.jsx"></script>
@@ -131,8 +207,16 @@
 <script type="text/babel" src="home.jsx"></script>
 <script type="text/babel" src="profile.jsx"></script>
 <script type="text/babel" src="publishing.jsx"></script>
+<script type="text/babel" src="downloads.jsx"></script>
 <script type="text/babel" src="views.jsx"></script>
 <script type="text/babel" src="intro.jsx"></script>
+<script type="text/babel" src="admin.jsx"></script>
+<script type="text/babel" src="licenses.jsx"></script>
+<script type="text/babel" src="maker.jsx"></script>
+<!-- Zodiac variants of Sidebar/Topbar/HomeView. Mounted only when T.zodiac. -->
+<script type="text/babel" src="zodiac/views.jsx"></script>
+<script type="text/babel" src="zodiac/views2.jsx"></script>
+<script type="text/babel" src="zodiac/views3.jsx"></script>
 <script type="text/babel" src="app.jsx"></script>
 </body>
 </html>

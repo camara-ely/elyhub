@@ -28,12 +28,12 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://cdn.discordapp.com; connect-src 'self' ipc: http://ipc.localhost https://discord.com https://cdn.discordapp.com https://*.turso.io wss://*.turso.io"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://cdn.discordapp.com https://*.workers.dev; connect-src 'self' ipc: http://ipc.localhost https://discord.com https://cdn.discordapp.com https://*.workers.dev https://*.r2.cloudflarestorage.com https://github.com https://api.github.com https://objects.githubusercontent.com"
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["dmg", "nsis", "msi", "appimage", "deb"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -41,9 +41,48 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "copyright": "ElyHub",
+    "copyright": "© ElyHub",
     "category": "SocialNetworking",
     "shortDescription": "ElyHub — the Ely community home",
-    "longDescription": "Leaderboards, rewards, trophies, and daily claims for the Ely Discord community."
+    "longDescription": "Leaderboards, rewards, trophies, and daily claims for the Ely Discord community.",
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "11.0",
+      "exceptionDomain": "",
+      "signingIdentity": null,
+      "providerShortName": null,
+      "entitlements": null
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
+      "wix": {
+        "language": ["en-US"]
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "headerImage": null,
+        "sidebarImage": null,
+        "languages": ["English"],
+        "displayLanguageSelector": false
+      }
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/camara-ely/elyhub/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRCQUIxMDYwNzc1QjAxMUYKUldRZkFWdDNZQkNyUzZHcjZna2wrR2hzUlN3UGEzdzlxSUZlZWNrOHF3NHN6OTEwbGZOVUUzUG8K"
+    }
   }
 }

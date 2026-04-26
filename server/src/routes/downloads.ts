@@ -35,9 +35,11 @@ downloadRoutes.get('/public/:asset_id', async (c: AppContext) => {
   return c.redirect(url, 302);
 });
 
-// Entitled (pack): auth required. SQL joins user_library to enforce
-// ownership in one round-trip — if the user doesn't own it, the
-// SELECT returns zero rows and we 403.
+// Entitled (pack): auth required. SQL joins both user_library AND the
+// listing row so we can 200 on two paths:
+//   • the user owns a library entry for the containing listing (buyer)
+//   • the user IS the seller (for QA, re-download, preview their own work)
+// Public kinds (cover / preview / screenshot) bypass both checks.
 downloadRoutes.get('/:asset_id', requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const aid = c.req.param('asset_id')!;
@@ -46,11 +48,14 @@ downloadRoutes.get('/:asset_id', requireAuth(), async (c: AppContext) => {
     db(c.env),
     `SELECT a.kind, a.r2_key, a.listing_id
      FROM assets a
+     JOIN listings l ON l.id = a.listing_id
      LEFT JOIN user_library ul
        ON ul.listing_id = a.listing_id AND ul.user_id = ?
      WHERE a.id = ?
-       AND (a.kind IN ('cover', 'preview', 'screenshot') OR ul.user_id IS NOT NULL)`,
-    [uid, aid],
+       AND (a.kind IN ('cover', 'preview', 'screenshot')
+            OR ul.user_id IS NOT NULL
+            OR l.seller_id = ?)`,
+    [uid, aid, uid],
   );
   if (!asset) {
     // Either the asset doesn't exist, OR the user doesn't own the
@@ -65,6 +70,7 @@ downloadRoutes.get('/:asset_id', requireAuth(), async (c: AppContext) => {
 
 // Variant that returns the URL in JSON instead of a 302. Useful when
 // the client needs to show a progress bar or pre-flight the HEAD.
+// Same buyer-or-seller entitlement logic as the redirect variant above.
 downloadRoutes.get('/:asset_id/url', requireAuth(), async (c: AppContext) => {
   const uid = userId(c);
   const aid = c.req.param('asset_id')!;
@@ -72,11 +78,14 @@ downloadRoutes.get('/:asset_id/url', requireAuth(), async (c: AppContext) => {
     db(c.env),
     `SELECT a.r2_key
      FROM assets a
+     JOIN listings l ON l.id = a.listing_id
      LEFT JOIN user_library ul
        ON ul.listing_id = a.listing_id AND ul.user_id = ?
      WHERE a.id = ?
-       AND (a.kind IN ('cover', 'preview', 'screenshot') OR ul.user_id IS NOT NULL)`,
-    [uid, aid],
+       AND (a.kind IN ('cover', 'preview', 'screenshot')
+            OR ul.user_id IS NOT NULL
+            OR l.seller_id = ?)`,
+    [uid, aid, uid],
   );
   if (!asset) return c.json({ error: 'not_found_or_forbidden' }, 404);
   const url = await signGetUrl(c.env, asset.r2_key);

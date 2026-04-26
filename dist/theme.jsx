@@ -146,6 +146,22 @@ const THEME_PRESETS = {
       { id: 'p6', x: 48,  y: 12,  size: 6,  color: '#F5E6FF', alpha: 0.73, blur: 30,  factor: 0.60, blend: 'screen' },
     ],
   },
+  // ────── Zodiac — celestial almanac ──────
+  // Premium theme unlocked by buying Hugin (Kassa product_id = 'gleipnir').
+  // The visual is a complete reskin (sidebar/topbar/home variants) handled
+  // in dist/zodiac/views.jsx — not a glass colour swap. The base/points
+  // below are still required so AmbientBG has something benign to paint
+  // underneath (the zodiac variants overlay their own CosmicBG on top).
+  zodiac: {
+    name: 'Zodiac',
+    accent: '#C9A24E', accentHi: '#F2D896',
+    base: 'radial-gradient(ellipse at 30% 0%, #1B1812 0%, #13110D 38%, #0A0908 72%, #050403 100%)',
+    points: [
+      { id: 'p1', x: 80,  y: 8,  size: 70, color: '#C9A24E', alpha: 0.18, blur: 140, factor: 0.10, blend: 'screen' },
+      { id: 'p2', x: 8,   y: 92, size: 80, color: '#7A5A22', alpha: 0.16, blur: 160, factor: 0.08, blend: 'screen' },
+    ],
+    unlock: { kassa: 'gleipnir' },
+  },
 };
 
 // localStorage keys. One for the active theme selection + one for the saved
@@ -431,6 +447,131 @@ function applyResolvedTheme(r) {
   T.textOnBgShadow = tokens.dark
     ? '0 1px 2px rgba(0,0,0,0.40), 0 0 10px rgba(0,0,0,0.20)'
     : '0 1px 2px rgba(255,255,255,0.55), 0 0 10px rgba(255,255,255,0.30)';
+
+  // ────── Zodiac flag ──────
+  // Single boolean read by the Sidebar/Topbar/HomeView gates in shell.jsx +
+  // home.jsx — when true, those components delegate to the Zodiac variants
+  // in dist/zodiac/views.jsx. The token mutations stay scoped here so non-
+  // zodiac themes keep their full liquid-glass palette untouched.
+  // Detect theme change involving zodiac so the transition overlay can fire.
+  // We compare against the previous T.theme value (set above) — if either
+  // direction crosses the zodiac boundary, dispatch an event that the
+  // ThemeTransition component subscribes to. Skips first apply so the
+  // overlay never shows on initial page load.
+  const prevKey = T.__prevAppliedKey;
+  const skip = !!T.__skipNextTransition;
+  if (skip) T.__skipNextTransition = false;
+  // Crossing the zodiac boundary triggers the ceremony AND delays the actual
+  // token mutation by ~650ms so the overlay reaches full opacity BEFORE the
+  // theme visibly flips. Without this delay the user sees the new theme for
+  // a flash before the curtain falls.
+  const crossing = !skip
+    && typeof prevKey === 'string' && prevKey !== r.key
+    && (r.key === 'zodiac' || prevKey === 'zodiac');
+  if (crossing && !T.__inDeferredApply) {
+    const goingZodiac = r.key === 'zodiac';
+    try {
+      window.dispatchEvent(new CustomEvent('ely:theme-transition', {
+        detail: { from: prevKey, to: r.key, direction: goingZodiac ? 'in' : 'out' },
+      }));
+    } catch {}
+    T.__inDeferredApply = true;
+    // Going INTO zodiac: wait long enough for the curtain to fully cover
+    // (fade-in is 700ms ease, plus the radial bloom needs another ~150ms
+    // to look like it's finished growing) before mutating tokens. Going
+    // OUT to a normal theme: shorter delay is fine — the parchment overlay
+    // covers the screen quickly and the user expects the new theme to
+    // appear "behind" it. The flash issue only happens on 'in'.
+    // Curtain fades in over ~700ms (60ms stagger + 700ms opacity transition).
+    // Mutate tokens at 800ms — exactly when the curtain hits opacity 1, so
+    // the swap is invisible. Curtain holds for ~700ms more then fades out.
+    const delay = 800;
+    setTimeout(() => {
+      T.__inDeferredApply = false;
+      T.__skipNextTransition = true; // suppress duplicate event
+      applyResolvedTheme(r);
+      try { window.dispatchEvent(new CustomEvent('ely:theme-deferred-applied', { detail: { key: r.key } })); } catch {}
+    }, delay);
+    return;
+  }
+  T.__prevAppliedKey = r.key;
+
+  T.zodiac = r.key === 'zodiac';
+  // Snapshot the original radius scale ONCE so we can flip every rounded
+  // surface to 2px under zodiac and restore on switch back.
+  if (!T.__sansR && T.r) T.__sansR = { ...T.r };
+  if (T.zodiac && typeof window !== 'undefined' && window.Z) {
+    // Squared-off radius scale — every host component using T.r.* gets
+    // ink+gold angular geometry without per-component edits.
+    if (T.r) Object.assign(T.r, { sm: 2, md: 2, lg: 3, xl: 4, xxl: 4, pill: 2 });
+  } else if (T.__sansR && T.r) {
+    Object.assign(T.r, T.__sansR);
+  }
+  if (T.zodiac && typeof window !== 'undefined' && window.Z) {
+    // Mirror just enough of Z onto T so any vanilla Glass card that *does*
+    // render under zodiac (e.g. an unported view) reads ink+gold instead of
+    // glass+blue. The zodiac variants paint their own surfaces directly
+    // from window.Z so they don't depend on these.
+    const Zg = window.Z;
+    T.accent       = Zg.gold;
+    T.accentHi     = Zg.goldHi;
+    T.accentGlow   = Zg.goldGlow;
+    T.glassBg      = `linear-gradient(180deg, ${Zg.ink2}, ${Zg.ink})`;
+    T.glassBg2     = `linear-gradient(180deg, ${Zg.ink3}, ${Zg.ink2})`;
+    T.glassBorder  = Zg.hair2;
+    T.glassBorder2 = Zg.hair3;
+    T.glassHi      = Zg.hair;
+    T.text         = 'rgba(232,220,192,0.96)';
+    T.text2        = 'rgba(232,220,192,0.78)';
+    T.text3        = 'rgba(232,220,192,0.58)';
+    T.text4        = 'rgba(232,220,192,0.36)';
+    T.textOnBg     = T.text;
+    T.textOnBg2    = T.text2;
+    T.textOnBg3    = T.text3;
+    T.textOnBgShadow = `0 1px 2px rgba(0,0,0,0.6), 0 0 12px ${Zg.goldGlow}`;
+    T.isLight      = false;
+
+    // Snapshot the original sans typography on first apply so we can restore
+    // when the user switches away from Zodiac. Without this a non-zodiac
+    // theme would inherit Cormorant italic forever after a single zodiac
+    // visit (TY.* gets mutated by reference).
+    if (!TY.__sansSnapshot) {
+      TY.__sansSnapshot = {
+        display: { ...TY.display }, h1: { ...TY.h1 },
+        h2: { ...TY.h2 }, h3: { ...TY.h3 },
+        numLarge: TY.numLarge ? { ...TY.numLarge } : null,
+        numMed: TY.numMed ? { ...TY.numMed } : null,
+        micro: TY.micro ? { ...TY.micro } : null,
+      };
+    }
+    // Heading typography → Cormorant italic. Affects host panes (Settings →
+    // Notifications/Appearance/Downloads etc.) that use TY.h2/h3 directly.
+    const headingFont = '"Cormorant Garamond","EB Garamond","Instrument Serif",Georgia,serif';
+    Object.assign(TY.display, { fontFamily: headingFont, fontStyle: 'italic', fontWeight: 500, letterSpacing: '0.005em' });
+    Object.assign(TY.h1,      { fontFamily: headingFont, fontStyle: 'italic', fontWeight: 500, letterSpacing: '0.005em' });
+    Object.assign(TY.h2,      { fontFamily: headingFont, fontStyle: 'italic', fontWeight: 500, letterSpacing: '0.005em' });
+    Object.assign(TY.h3,      { fontFamily: headingFont, fontStyle: 'italic', fontWeight: 500, letterSpacing: '0.01em' });
+    if (TY.numLarge) Object.assign(TY.numLarge, { fontFamily: headingFont, fontStyle: 'italic' });
+    if (TY.numMed)   Object.assign(TY.numMed,   { fontFamily: headingFont, fontStyle: 'italic' });
+    if (TY.micro)    Object.assign(TY.micro,    {
+      fontFamily: '"Cinzel","Cormorant SC","Cormorant Garamond",serif',
+      letterSpacing: '0.22em',
+    });
+  } else if (TY.__sansSnapshot) {
+    // Restore sans typography when switching away from Zodiac.
+    // Object.assign only ADDS keys — keys we set under zodiac (fontStyle:
+    // italic, fontWeight: 500, letterSpacing) would persist if absent from
+    // the snapshot. Explicitly null them via 'normal'/undefined defaults
+    // first, then overlay the snapshot.
+    const reset = { fontStyle: 'normal', fontWeight: undefined, letterSpacing: undefined };
+    Object.assign(TY.display, reset, TY.__sansSnapshot.display);
+    Object.assign(TY.h1,      reset, TY.__sansSnapshot.h1);
+    Object.assign(TY.h2,      reset, TY.__sansSnapshot.h2);
+    Object.assign(TY.h3,      reset, TY.__sansSnapshot.h3);
+    if (TY.__sansSnapshot.numLarge && TY.numLarge) Object.assign(TY.numLarge, reset, TY.__sansSnapshot.numLarge);
+    if (TY.__sansSnapshot.numMed && TY.numMed)     Object.assign(TY.numMed,   reset, TY.__sansSnapshot.numMed);
+    if (TY.__sansSnapshot.micro && TY.micro)       Object.assign(TY.micro,    reset, TY.__sansSnapshot.micro);
+  }
 }
 
 // ────────────── HoverOrbs ──────────────
@@ -812,4 +953,36 @@ function CardSpotlight({ anchor = 'tr', size = 320, opacity = 1 }) {
       }}/>
     </>
   );
+}
+
+// ────────────── Zodiac stubs ──────────────
+// shell.jsx mounts these unconditionally. They render nothing today; when we
+// wire up the Zodiac theme properly they'll fill in. Keeping them as no-ops
+// here so the app boots regardless of theme.
+function ZodiacStarfield()   { return null; }
+function ZodiacFrame()       { return null; }
+function ZodiacGlobalStyle() {
+  // Toggle a body attribute so the scoped sheet matches; no-op when zodiac
+  // is off. We strip the attribute on cleanup so other themes don't inherit.
+  React.useEffect(() => {
+    if (T.zodiac) document.body.setAttribute('data-theme', 'zodiac');
+    else if (document.body.getAttribute('data-theme') === 'zodiac') document.body.removeAttribute('data-theme');
+    return () => {
+      if (document.body.getAttribute('data-theme') === 'zodiac') document.body.removeAttribute('data-theme');
+    };
+  }, [T.zodiac]);
+  if (!T.zodiac) return null;
+  // Kill round shapes on host components rendered under zodiac. The toggle
+  // pills, role="switch" elements and other rounded chrome would otherwise
+  // clash with the angular ink+gold language.
+  const css = `
+    body[data-theme="zodiac"] [role="switch"] { border-radius: 2px !important; }
+    body[data-theme="zodiac"] [role="switch"] > * { border-radius: 1px !important; }
+    body[data-theme="zodiac"] button[style*="border-radius: 9999px"],
+    body[data-theme="zodiac"] [style*="border-radius: 9999px"] {
+      border-radius: 2px !important;
+    }
+    body[data-theme="zodiac"] input[type="checkbox"] { accent-color: #C9A24E; }
+  `;
+  return <style data-zodiac-global="">{css}</style>;
 }

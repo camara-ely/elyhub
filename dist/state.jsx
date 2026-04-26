@@ -99,9 +99,15 @@ function useLibrary() {
     const existing = items.find((it) => it.listingId === listing.id);
     if (existing && isSub && existing.status !== 'expired') {
       // Renewal — extend from current expiry.
-      const base = Math.max(now, existing.expiresAt || now);
+      // EXCEPTION: if the previous status was 'cancelled', the user broke
+      // the auto-renew chain. Treat the new purchase as a fresh start
+      // (now + 30d), not as a stack on top of the remaining grace period —
+      // otherwise paying once after a cancel would give them up to 59d.
+      const base = existing.status === 'cancelled'
+        ? now
+        : Math.max(now, existing.expiresAt || now);
       const next = items.map((it) => it.listingId === listing.id
-        ? { ...it, status: 'active', expiresAt: base + PLUGIN_PERIOD_MS, lastRenewedAt: now }
+        ? { ...it, status: 'active', autoRenew: true, expiresAt: base + PLUGIN_PERIOD_MS, lastRenewedAt: now }
         : it);
       persist(next);
       return next.find((it) => it.listingId === listing.id);
@@ -145,10 +151,24 @@ function useLibrary() {
 // LIBRARY entry so we can show countdowns).
 function getActivePlugins(libItems) {
   const all = window.LISTINGS || [];
-  return libItems
+  const joined = libItems
     .filter((it) => it.status === 'active')
     .map((it) => ({ entry: it, listing: all.find((l) => l.id === it.listingId) }))
     .filter((x) => x.listing && x.listing.type === 'plugin');
+  // Dedup tiered listings: when a user owns multiple tiers of the same Kassa
+  // product (e.g. Hugin 1key + 2key), they share kassa_product_id. Show one
+  // sidebar entry — prefer the higher-priced tier so the badge reflects the
+  // bigger purchase. Listings without a kassa_product_id stay as-is.
+  const seen = new Map();
+  for (const x of joined) {
+    const kpid = x.listing.kassa_product_id || x.listing.kassaProductId;
+    if (!kpid) { seen.set(x.listing.id, x); continue; }
+    const prev = seen.get(`kpid:${kpid}`);
+    if (!prev || (x.listing.price || 0) > (prev.listing.price || 0)) {
+      seen.set(`kpid:${kpid}`, x);
+    }
+  }
+  return [...seen.values()];
 }
 
 // Pretty-print "expires in 17d" / "expires in 4h" / "expired".
@@ -237,6 +257,12 @@ const REVIEW_BODIES = [
   'Instant install, zero friction. Already recommending to friends.',
 ];
 function buildSeedReviews() {
+  // Seed reviews were a placeholder while the catalog was mock-only. With
+  // LISTINGS + MEMBERS now both empty until backend hydrates, there's
+  // nothing to seed against — and the real review data comes from
+  // /listings/:id/reviews (fetched lazily per-listing via hydrateReviews).
+  return [];
+  // eslint-disable-next-line no-unreachable
   const listings = Array.isArray(window.LISTINGS) ? window.LISTINGS : [];
   const members  = Array.isArray(window.MEMBERS) ? window.MEMBERS : [];
   const me = window.ME || {};
@@ -279,26 +305,101 @@ function buildSeedReviews() {
   return out;
 }
 
-// Materialize window.REVIEWS = [ ...seed, ...user ]. Idempotent — seeds only
-// build once per page lifetime, user reviews re-read from storage.
+// Remote reviews cache, keyed by listingId → array of review rows in the
+// shape emitted by GET /listings/:id/reviews. Populated lazily: the first
+// time a detail page calls reviewsForListing(id) we kick off a fetch, and
+// subsequent renders see the hydrated rows. Stored on window so that every
+// useReviews() instance (and every listing detail render) shares the cache.
+if (!window.__REMOTE_REVIEWS) window.__REMOTE_REVIEWS = {};
+// Per-listing in-flight fetch promises so concurrent callers share one
+// request. Cleared on resolve.
+if (!window.__REMOTE_REVIEWS_PENDING) window.__REMOTE_REVIEWS_PENDING = new Map();
+// Subscriber list — so useReviews() components re-render when a lazy fetch
+// completes (push-based; no polling). Each subscription is a bump fn.
+if (!window.__REMOTE_REVIEWS_SUBS) window.__REMOTE_REVIEWS_SUBS = new Set();
+function notifyReviewsChanged() {
+  for (const fn of window.__REMOTE_REVIEWS_SUBS) { try { fn(); } catch {} }
+}
+
+// Backend review rows come in a richer shape than local user reviews — we
+// normalize them into the same record shape the UI expects.
+function mapRemoteReview(r, listingId) {
+  return {
+    id: r.id,                        // synthetic '<listingId>:<userId>'
+    listingId,
+    authorId: r.author_id,
+    authorName: r.author_name,       // precomputed from the join
+    authorAvatar: r.author_avatar,
+    rating: r.stars,
+    text: r.body || '',
+    createdAt: r.created_at,
+    editedAt: r.updated_at !== r.created_at ? r.updated_at : undefined,
+    remote: true,                    // marker — lets mutations know this is
+                                     // server-owned vs. a local user row.
+  };
+}
+
+// Kick off a fetch for a listing's reviews if we don't already have them
+// cached (or an in-flight request). Returns the promise so callers that
+// want to await can, but we don't require it — the subscribe path picks up
+// results on re-render automatically.
+function hydrateReviews(listingId) {
+  if (!listingId) return Promise.resolve();
+  if (!window.ElyAPI?.get) return Promise.resolve();
+  // `user-…` ids are local-only — no remote reviews to fetch.
+  if (String(listingId).startsWith('user-')) return Promise.resolve();
+  if (window.__REMOTE_REVIEWS[listingId]) return Promise.resolve();
+  if (window.__REMOTE_REVIEWS_PENDING.has(listingId)) {
+    return window.__REMOTE_REVIEWS_PENDING.get(listingId);
+  }
+  const p = (async () => {
+    try {
+      const res = await window.ElyAPI.get(`/listings/${encodeURIComponent(listingId)}/reviews`);
+      const items = Array.isArray(res?.items) ? res.items : [];
+      window.__REMOTE_REVIEWS[listingId] = items.map((r) => mapRemoteReview(r, listingId));
+      rebuildReviewsIndex();
+      notifyReviewsChanged();
+    } catch (err) {
+      // Non-fatal — empty cache entry so we don't refetch every render.
+      window.__REMOTE_REVIEWS[listingId] = [];
+      rebuildReviewsIndex();
+      notifyReviewsChanged();
+    } finally {
+      window.__REMOTE_REVIEWS_PENDING.delete(listingId);
+    }
+  })();
+  window.__REMOTE_REVIEWS_PENDING.set(listingId, p);
+  return p;
+}
+
+// Materialize window.REVIEWS = [ ...remote, ...user ]. Idempotent.
+// Remote rows come from the per-listing cache (populated on detail-page
+// open). User rows are the localStorage-backed reviews for `user-…`
+// listings that never hit the backend. Reply/helpful side-tables still
+// attach (they stay local-only for now — next pass).
 function rebuildReviewsIndex() {
-  if (!window.__SEED_REVIEWS) window.__SEED_REVIEWS = buildSeedReviews();
   const user = loadUserReviews();
   const replies = loadReviewReplies();
   const counts = loadHelpfulCounts();
-  // Merge side-tables onto each review at read-time. Cheap (copy-spread per
-  // row) and keeps the mutation story simple — storage holds only the delta,
-  // never the materialized blob.
   const attach = (r) => ({
     ...r,
     reply: replies[r.id] || null,
     helpfulCount: counts[r.id] || 0,
   });
-  window.REVIEWS = [...window.__SEED_REVIEWS.map(attach), ...user.map(attach)];
+  // Flatten all cached remote listings into one array.
+  const remote = [];
+  for (const list of Object.values(window.__REMOTE_REVIEWS)) {
+    if (Array.isArray(list)) remote.push(...list);
+  }
+  window.REVIEWS = [...remote.map(attach), ...user.map(attach)];
 }
 
 // Public helpers consumed by views.
 function reviewsForListing(listingId) {
+  // Side-effect: first access for a listing kicks off a background fetch.
+  // Subsequent renders see the hydrated cache automatically via the
+  // useReviews subscription. No-op on repeat calls (dedupe in hydrate).
+  if (listingId) hydrateReviews(listingId);
   const all = Array.isArray(window.REVIEWS) ? window.REVIEWS : [];
   return all.filter((r) => r.listingId === listingId)
             .sort((a, b) => b.createdAt - a.createdAt);
@@ -322,21 +423,75 @@ function reviewsForSeller(sellerId) {
 
 function useReviews() {
   const [version, bump] = React.useReducer((x) => x + 1, 0);
-  React.useEffect(() => { rebuildReviewsIndex(); bump(); }, []);
+  React.useEffect(() => {
+    rebuildReviewsIndex();
+    bump();
+    // Subscribe to remote-review hydration so late-arriving fetch results
+    // trigger a re-render here automatically (no polling).
+    window.__REMOTE_REVIEWS_SUBS.add(bump);
+    return () => { window.__REMOTE_REVIEWS_SUBS.delete(bump); };
+  }, []);
+
+  // Classify a listing id — backend-owned (uuid) vs local-only (user-…).
+  // Mutations route differently based on this.
+  const isBackend = (listingId) => !String(listingId || '').startsWith('user-');
 
   const add = ({ listingId, rating, text }) => {
     const me = window.ME || {};
     if (!me.id) return null;
+    const stars = Math.max(1, Math.min(5, Math.floor(Number(rating) || 0)));
+    const body = String(text || '').trim().slice(0, 2000);
+
+    // Backend listing: optimistic insert into remote cache, then POST. On
+    // success we reconcile with the server response; on failure we rollback.
+    if (isBackend(listingId) && window.ElyAPI?.isSignedIn?.() && window.ElyAPI?.post) {
+      const syntheticId = `${listingId}:${me.id}`;
+      const optimistic = {
+        id: syntheticId,
+        listingId,
+        authorId: me.id,
+        authorName: me.name || me.tag || 'You',
+        authorAvatar: me.avatar || '',
+        rating: stars,
+        text: body,
+        createdAt: Date.now(),
+        remote: true,
+      };
+      const list = window.__REMOTE_REVIEWS[listingId] || [];
+      // Replace prior if any; otherwise prepend.
+      const filtered = list.filter((r) => r.authorId !== me.id);
+      window.__REMOTE_REVIEWS[listingId] = [optimistic, ...filtered];
+      rebuildReviewsIndex();
+      bump();
+
+      window.ElyAPI.post(`/listings/${encodeURIComponent(listingId)}/reviews`, {
+        stars, body: body || null,
+      }).catch((err) => {
+        // Rollback — drop the optimistic row, put back what was there.
+        window.__REMOTE_REVIEWS[listingId] = list;
+        rebuildReviewsIndex();
+        bump();
+        console.warn('[reviews] POST failed:', err?.message || err);
+        try {
+          const label = /not_owned/i.test(err?.message || '')
+            ? 'You need to own this listing to review it'
+            : `Review failed: ${err?.message || 'error'}`;
+          window.ElyNotify?.toast?.({ text: label, kind: 'error' });
+        } catch {}
+      });
+      return optimistic;
+    }
+
+    // Local path — unchanged shape for `user-…` listings.
     const review = {
       id: `u-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       listingId,
       authorId: me.id,
-      rating: Math.max(1, Math.min(5, Math.floor(Number(rating) || 0))),
-      text: String(text || '').trim().slice(0, 500),
+      rating: stars,
+      text: body.slice(0, 500),
       createdAt: Date.now(),
     };
     const existing = loadUserReviews();
-    // Replace any prior review on the same listing by same author.
     const filtered = existing.filter((r) => !(r.listingId === listingId && r.authorId === me.id));
     filtered.unshift(review);
     saveUserReviews(filtered);
@@ -346,6 +501,29 @@ function useReviews() {
   };
 
   const remove = (reviewId) => {
+    const me = window.ME || {};
+    // Synthetic ids for remote reviews are `<listingId>:<userId>`. Split
+    // on the last colon — listingIds never contain colons, so this is safe.
+    if (String(reviewId).includes(':') && me.id) {
+      const [listingId, authorId] = String(reviewId).split(':');
+      if (authorId !== me.id) return; // defensive — can only delete own
+      const list = window.__REMOTE_REVIEWS[listingId] || [];
+      const prior = list;
+      window.__REMOTE_REVIEWS[listingId] = list.filter((r) => r.authorId !== me.id);
+      rebuildReviewsIndex();
+      bump();
+      if (window.ElyAPI?.del) {
+        window.ElyAPI.del(`/listings/${encodeURIComponent(listingId)}/reviews`).catch((err) => {
+          // Rollback.
+          window.__REMOTE_REVIEWS[listingId] = prior;
+          rebuildReviewsIndex();
+          bump();
+          console.warn('[reviews] DELETE failed:', err?.message || err);
+        });
+      }
+      return;
+    }
+    // Local path.
     const next = loadUserReviews().filter((r) => r.id !== reviewId);
     saveUserReviews(next);
     rebuildReviewsIndex();
@@ -355,14 +533,31 @@ function useReviews() {
   const hasReviewed = (listingId) => {
     const me = window.ME || {};
     if (!me.id) return false;
+    if (isBackend(listingId)) {
+      const list = window.__REMOTE_REVIEWS[listingId] || [];
+      return list.some((r) => r.authorId === me.id);
+    }
     return loadUserReviews().some((r) => r.listingId === listingId && r.authorId === me.id);
   };
 
-  // Edit my own review in place (rating + text). Seed reviews are not mine, so
-  // we only scan user storage. Fails silently if not found.
+  // Edit = POST again (upsert on backend; local replace for `user-…`).
+  // Reuses add()'s plumbing for the backend path since the DB does
+  // ON CONFLICT DO UPDATE.
   const update = (reviewId, { rating, text }) => {
     const me = window.ME || {};
     if (!me.id) return false;
+    if (String(reviewId).includes(':')) {
+      const [listingId, authorId] = String(reviewId).split(':');
+      if (authorId !== me.id) return false;
+      const prev = (window.__REMOTE_REVIEWS[listingId] || []).find((r) => r.authorId === me.id);
+      add({
+        listingId,
+        rating: rating ?? prev?.rating ?? 5,
+        text: text ?? prev?.text ?? '',
+      });
+      return true;
+    }
+    // Local path.
     const cur = loadUserReviews();
     const idx = cur.findIndex((r) => r.id === reviewId && r.authorId === me.id);
     if (idx < 0) return false;
@@ -621,7 +816,7 @@ function seedThreads(meId) {
     {
       minsAgo: 60 * 24 * 3 + 40, // 3d ago
       msgs: [
-        { fromMe: true, text: 'Any plans to support DaVinci Resolve in KassaHub?' },
+        { fromMe: true, text: 'Any plans to support DaVinci Resolve in Zephyro?' },
         { fromOther: true, text: "It's on the roadmap — probably Q3. Honestly depends on how the Premiere side stabilizes." },
       ],
     },
@@ -647,74 +842,212 @@ function seedThreads(meId) {
   return out;
 }
 
+// Maps a server-shaped attachment into the client shape used by views.
+// Kind 'listing' encodes the listing id in attachment_key (see messages.ts
+// route comment). Image/file are reserved for future R2-backed embeds.
+function mapServerAttachment(att) {
+  if (!att || !att.attachment_key) return null;
+  const k = att.attachment_kind;
+  if (k === 'listing') return { type: 'listing', id: att.attachment_key };
+  if (k === 'image' || k === 'file') return { type: k, key: att.attachment_key };
+  return null;
+}
+
+// Server message → client message shape ({ id, fromId, text, ts, read, attachment? }).
+function mapServerMessage(m, meId, otherId) {
+  const att = mapServerAttachment(m);
+  return {
+    id: m.id,
+    fromId: m.from_me ? meId : otherId,
+    text: m.body || '',
+    ts: m.created_at,
+    read: m.from_me || !!m.read_at,
+    ...(att ? { attachment: att } : {}),
+  };
+}
+
+// Backed by /messages/* routes. Polls thread list every 10s while the tab
+// is visible. Per-thread message history is hydrated on first selection
+// (markRead triggers it) and re-fetched on each poll for the active thread.
+//
+// State shape preserved from the legacy localStorage version so existing
+// consumers (MessagesView, ProfileView, ShareTrigger) need no changes:
+//   threads:        { [clientId]: { id, otherId, messages: [], updatedAt, unread, _hydrated } }
+//   list:           threads sorted by updatedAt DESC
+//   meId, startThread, send, markRead, unreadForThread, unreadCount
 function useMessages() {
   const meId = window.ME?.id || 'me';
-  const [threads, setThreads] = React.useState(() => {
-    const stored = loadThreads();
-    if (stored) return stored;
-    const seed = seedThreads(meId);
-    saveThreads(seed);
-    return seed;
+  const [threads, setThreads] = React.useState({});
+  const activeOtherRef = React.useRef(null); // current open thread, for poll
+
+  const buildEmpty = (otherId) => ({
+    id: threadIdFor(meId, otherId),
+    otherId,
+    messages: [],
+    updatedAt: 0,
+    unread: 0,
+    _hydrated: false,
   });
 
-  // Cross-tab sync — rare but cheap to support.
+  // Hydrate per-thread messages. Called when the user opens a thread, and
+  // on each poll tick for the currently-active thread so new messages
+  // from the other side appear without manual refresh.
+  const loadThread = React.useCallback(async (otherId) => {
+    if (!otherId || otherId === meId) return;
+    if (!window.ElyAPI?.isSignedIn?.()) return;
+    try {
+      const res = await window.ElyAPI.get(`/messages/threads/${encodeURIComponent(otherId)}`);
+      const id = threadIdFor(meId, otherId);
+      const msgs = (res.messages || []).map((m) => mapServerMessage(m, meId, otherId));
+      setThreads((prev) => {
+        const t = prev[id] || buildEmpty(otherId);
+        return {
+          ...prev,
+          [id]: {
+            ...t,
+            messages: msgs,
+            updatedAt: res.thread?.last_message_at || msgs[msgs.length - 1]?.ts || t.updatedAt,
+            _hydrated: true,
+          },
+        };
+      });
+    } catch (err) {
+      console.warn('[messages] loadThread failed:', err.message);
+    }
+  }, [meId]);
+
+  // Pull the thread summaries (one-line previews + unread counts). Light
+  // payload; safe to poll. Preserves any already-hydrated message arrays.
+  const loadThreadList = React.useCallback(async () => {
+    if (!window.ElyAPI?.isSignedIn?.()) return;
+    try {
+      const res = await window.ElyAPI.get('/messages/threads');
+      setThreads((prev) => {
+        const next = {};
+        for (const t of res.items || []) {
+          const id = threadIdFor(meId, t.other_user_id);
+          const existing = prev[id];
+          next[id] = {
+            id,
+            otherId: t.other_user_id,
+            messages: existing?.messages || [],
+            updatedAt: t.last_message_at || 0,
+            unread: t.unread || 0,
+            _hydrated: existing?._hydrated || false,
+          };
+        }
+        // Preserve any thread the user just started but that has no messages
+        // yet (server omits them from the list since last_message_at is null).
+        for (const id of Object.keys(prev)) {
+          if (!next[id] && prev[id].messages.length === 0) next[id] = prev[id];
+        }
+        return next;
+      });
+    } catch (err) {
+      console.warn('[messages] loadThreadList failed:', err.message);
+    }
+  }, [meId]);
+
+  // Initial load + polling. Suppresses ticks when the tab is hidden so we
+  // don't burn CF Workers requests on background tabs.
   React.useEffect(() => {
-    const onStorage = (e) => {
-      if (e.key === MESSAGES_KEY) setThreads(loadThreads() || {});
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
+    loadThreadList();
+    const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      loadThreadList();
+      // Also re-hydrate the active thread so incoming messages appear.
+      if (activeOtherRef.current) loadThread(activeOtherRef.current);
+    }, 10_000);
+    return () => clearInterval(id);
+  }, [loadThreadList, loadThread]);
 
-  const persist = (next) => {
-    saveThreads(next);
-    setThreads(next);
-  };
-
-  // Ensure a thread exists for (me, otherId) without stomping messages if it
-  // already does. Returns the thread id so the caller can navigate to it.
+  // Ensure a (possibly empty) thread row exists locally so the UI can
+  // route to it before the first message lands. The server creates the
+  // real row lazily on first send. Triggers a hydrate so any prior
+  // history (if the thread already exists server-side) shows up.
   const startThread = (otherId) => {
     if (!otherId || otherId === meId) return null;
     const id = threadIdFor(meId, otherId);
-    if (threads[id]) return id;
-    persist({ ...threads, [id]: { id, otherId, messages: [], updatedAt: Date.now() } });
+    setThreads((prev) => prev[id] ? prev : { ...prev, [id]: buildEmpty(otherId) });
+    loadThread(otherId);
     return id;
   };
 
-  const send = (otherId, text) => {
-    const clean = String(text || '').trim().slice(0, 1000);
-    if (!clean) return;
+  // Optimistic send: append a temp message immediately, then reconcile
+  // with the server response. On failure, drop the temp and toast.
+  const send = async (otherId, text, attachment) => {
+    const clean = String(text || '').trim().slice(0, 4000);
+    if (!clean && !attachment) return;
     const id = threadIdFor(meId, otherId);
-    const prev = threads[id] || { id, otherId, messages: [], updatedAt: 0 };
-    const msg = {
-      id: `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      fromId: meId, text: clean, ts: Date.now(), read: true,
+    const tempId = `tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const optimistic = {
+      id: tempId,
+      fromId: meId,
+      text: clean,
+      ts: Date.now(),
+      read: true,
+      _pending: true,
+      ...(attachment ? { attachment } : {}),
     };
-    persist({
-      ...threads,
-      [id]: { ...prev, messages: [...prev.messages, msg], updatedAt: msg.ts },
+    setThreads((prev) => {
+      const t = prev[id] || buildEmpty(otherId);
+      return { ...prev, [id]: { ...t, messages: [...t.messages, optimistic], updatedAt: optimistic.ts } };
     });
+    try {
+      const payload = { to: otherId, body: clean };
+      // Translate client attachment shape to server fields. Only listing
+      // embeds are wired today; image/file would need an R2 upload first.
+      if (attachment && attachment.type === 'listing' && attachment.id) {
+        payload.attachment_kind = 'listing';
+        payload.attachment_key = attachment.id;
+      }
+      const res = await window.ElyAPI.post('/messages/send', payload);
+      const m = res.message;
+      const real = mapServerMessage({ ...m, from_me: true }, meId, otherId);
+      setThreads((prev) => {
+        const t = prev[id];
+        if (!t) return prev;
+        const replaced = t.messages.map((x) => x.id === tempId ? real : x);
+        return { ...prev, [id]: { ...t, messages: replaced, updatedAt: real.ts } };
+      });
+    } catch (err) {
+      console.warn('[messages] send failed:', err.message);
+      setThreads((prev) => {
+        const t = prev[id];
+        if (!t) return prev;
+        return { ...prev, [id]: { ...t, messages: t.messages.filter((x) => x.id !== tempId) } };
+      });
+      try { ElyNotify?.toast?.({ text: `Couldn't send: ${err.message || 'unknown'}`, kind: 'warn' }); } catch {}
+    }
   };
 
-  // Mark every incoming message in this thread as read. No-op if nothing
-  // changed to avoid pointless storage writes.
-  const markRead = (threadId) => {
-    const t = threads[threadId];
+  // Bumps the server-side read watermark for the calling user and zeroes
+  // the local unread count. Idempotent. Also hydrates the thread on first
+  // open so the message history is fetched once the user lands on it.
+  const markRead = async (clientThreadId) => {
+    const t = threads[clientThreadId];
     if (!t) return;
-    let changed = false;
-    const msgs = t.messages.map((m) => {
-      if (m.fromId !== meId && !m.read) { changed = true; return { ...m, read: true }; }
-      return m;
-    });
-    if (!changed) return;
-    persist({ ...threads, [threadId]: { ...t, messages: msgs } });
+    activeOtherRef.current = t.otherId;
+    if (!t._hydrated) loadThread(t.otherId);
+    if ((t.unread || 0) === 0) return;
+    setThreads((prev) => ({ ...prev, [clientThreadId]: { ...prev[clientThreadId], unread: 0 } }));
+    try {
+      await window.ElyAPI.post(`/messages/threads/${encodeURIComponent(t.otherId)}/read`);
+    } catch (err) {
+      console.warn('[messages] markRead failed:', err.message);
+    }
   };
 
-  const unreadForThread = (t) => t.messages.filter((m) => m.fromId !== meId && !m.read).length;
+  // Server already gives unread per thread; fall back to scanning messages
+  // for legacy/unhydrated threads.
+  const unreadForThread = (t) => {
+    if (typeof t.unread === 'number') return t.unread;
+    return t.messages.filter((m) => m.fromId !== meId && !m.read).length;
+  };
   const list = Object.values(threads).sort((a, b) => b.updatedAt - a.updatedAt);
   const unreadCount = list.reduce((a, t) => a + unreadForThread(t), 0);
 
-  return { threads, list, meId, startThread, send, markRead, unreadForThread, unreadCount };
+  return { threads, list, meId, startThread, send, markRead, unreadForThread, unreadCount, loadThread };
 }
 
 // ──── Coupons / promo codes — creator-issued discount codes ────
@@ -976,6 +1309,10 @@ const TOUR_STEPS = [
   { key: 'nav-messages', title: 'Direct messages',body: 'Chat with creators and buyers directly. Coupons, support, the works.' },
   { key: 'aura',         title: 'Your aura',      body: "This is your balance. You earn aura from community activity — leveling up unlocks new things." },
   { key: 'nav-profile',  title: 'Your profile',   body: 'Your stats, trophies, and a shortcut to the Creator Dashboard if you publish.' },
+  // Theme picker step — shows theme chips you can hover to live-preview the
+  // app under each one. Includes Zodiac (a celestial reskin unlocked by Hugin).
+  { key: null, kind: 'themes', title: 'Make it yours',
+    body: 'ElyHub ships with several looks. Hover one to preview — Zodiac is the showcase, unlocked by buying the Hugin plugin.' },
   { key: null, title: "You're set", body: 'Everything else is explore-and-discover. Welcome to the community.' },
 ];
 function OnboardingTour({ tour }) {
@@ -1099,6 +1436,7 @@ function OnboardingTour({ tour }) {
         <div style={{ ...TY.body, color: T.text2, marginTop: 8, lineHeight: 1.5, fontSize: 13 }}>
           {stepDef.body}
         </div>
+        {stepDef.kind === 'themes' && <OnboardingThemePicker/>}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, gap: 10 }}>
           <button onClick={tour.skip} style={{
             background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
@@ -1129,3 +1467,57 @@ function OnboardingTour({ tour }) {
     </div>
   );
 }
+
+// ─── Onboarding theme picker ───
+// Static row of theme thumbnails inside the tour tooltip. Just shows what's
+// available — no live preview. Zodiac is the showcase chip (gold accent).
+function OnboardingThemePicker() {
+  const chips = [
+    { k: 'blue',    name: 'Nocturne', a: '#0159E7', b: '#6FACFF' },
+    { k: 'ember',   name: 'Ember',    a: '#E25C3A', b: '#FF8A64' },
+    { k: 'violet',  name: 'Violet',   a: '#8B5CF6', b: '#C89DFF' },
+    { k: 'zodiac',  name: 'Zodiac',   a: '#0A0908', b: '#C9A24E', special: true },
+  ];
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+        {chips.map((c) => (
+          <div key={c.k} style={{
+            position: 'relative', height: 56,
+            background: c.special
+              ? `radial-gradient(ellipse at 70% 30%, ${c.b}33, ${c.a})`
+              : `linear-gradient(135deg, ${c.a}, ${c.b})`,
+            border: `1px solid ${c.special ? c.b + '66' : 'rgba(255,255,255,0.18)'}`,
+            borderRadius: c.special ? 4 : 8,
+            boxShadow: c.special ? `0 0 14px ${c.b}33` : 'none',
+          }}>
+            {c.special && (
+              <span style={{
+                position: 'absolute', top: 4, right: 6,
+                color: c.b, fontSize: 11, lineHeight: 1,
+                filter: `drop-shadow(0 0 4px ${c.b}88)`,
+              }}>✦</span>
+            )}
+            <span style={{
+              position: 'absolute', bottom: 4, left: 6,
+              fontFamily: c.special
+                ? '"Cormorant Garamond","EB Garamond",Georgia,serif'
+                : T.fontSans,
+              fontStyle: c.special ? 'italic' : 'normal',
+              fontSize: 11, fontWeight: 600,
+              color: c.special ? c.b : '#fff',
+              letterSpacing: c.special ? '0.02em' : 0,
+              textShadow: '0 1px 2px rgba(0,0,0,0.4)',
+            }}>{c.name}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ ...TY.small, color: T.text3, fontSize: 11, marginTop: 8 }}>
+        Switch themes anytime in Settings → Appearance.
+      </div>
+    </div>
+  );
+}
+
+// Expose plugin helpers for the Zodiac sidebar (dist/zodiac/views.jsx).
+Object.assign(window, { getActivePlugins, expiryLabel });

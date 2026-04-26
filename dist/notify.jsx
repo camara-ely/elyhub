@@ -94,6 +94,18 @@
       return () => toastSubs.delete(fn);
     },
 
+    // Public toast() — fire-and-forget in-app toast for ad-hoc UI feedback
+    // (copy-to-clipboard, save success, form errors). Unlike dispatch(), this
+    // bypasses the prefs gate because the user initiated the action and
+    // expects immediate confirmation. Accepts either { text } or { title, body }.
+    toast(input) {
+      if (!input) return;
+      const kind = input.kind || 'info';
+      const title = input.title || input.text || '';
+      const body = input.body || (input.title ? input.text || '' : '');
+      emitToast({ id: Date.now() + Math.random(), kind, title, body, at: Date.now() });
+    },
+
     // Synthetic event log API — for events that don't originate from aura_log.
     // The inbox calls getEvents() and subscribeEvents() to keep the drawer in
     // sync. pushEvent dedups by id so retriggering is idempotent.

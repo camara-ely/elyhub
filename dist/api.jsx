@@ -151,7 +151,14 @@
       return data.user;
     },
 
-    isSignedIn: () => !!session?.token,
+    isSignedIn: () => {
+      if (!session?.token) return false;
+      // Treat as signed-out if the JWT has expired locally — calling code
+      // (publish, purchase) gets a fast, deterministic answer instead of
+      // a mystery 401 mid-flow.
+      if (session.expires_at && Number(session.expires_at) * 1000 < Date.now()) return false;
+      return true;
+    },
     getToken: () => session?.token || null,
     getUser: () => session?.user || null,
     signOut: () => { session = null; writeSession(null); },

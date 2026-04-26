@@ -18,13 +18,28 @@
 // ────────────── Shell ──────────────
 function Shell({ view, setView, state, onQuick, resolvedTheme, library, wishlist, follows, reviews, messages, children }) {
   const [notifOpen, setNotifOpen] = React.useState(false);
+  // Theme-transition overlay — mounts unconditionally so it can fire when
+  // leaving zodiac too. The component listens for 'ely:theme-transition'
+  // and renders null when no transition is active.
+  const ZTrans = window.ZodiacThemeTransition;
   return (
-    <div style={{ position: 'relative', minHeight: '100vh', color: T.text, fontFamily: T.fontSans }}>
+    <div style={{ position: 'relative', height: '100vh', overflow: 'hidden', color: T.text, fontFamily: T.fontSans }}>
+      {ZTrans && <ZTrans/>}
       <a href="#main-content" className="skip-link">Skip to content</a>
       <AmbientBG resolved={resolvedTheme}/>
-      <div style={{ position: 'relative', zIndex: 1, display: 'flex', minHeight: '100vh' }}>
+      {/* Zodiac-only overlay: faint starfield drawn over the AmbientBG. The
+          component checks T.starfield internally and noops for other themes. */}
+      <ZodiacStarfield/>
+      <ZodiacGlobalStyle/>
+      <ZodiacFrame/>
+      {/* Two-pane independent scroll model. The outer wrapper is locked to
+          the viewport (height/overflow above) so the document itself never
+          scrolls. Sidebar and main each get their own overflow-y: auto, so
+          scrolling one never moves the other. AmbientBG / ZodiacFrame use
+          fixed positioning and paint the whole window regardless. */}
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', height: '100vh' }}>
         <Sidebar view={view} setView={setView} state={state} onQuick={onQuick} library={library} wishlist={wishlist} follows={follows} messages={messages}/>
-        <main id="main-content" tabIndex={-1} style={{ flex: 1, minWidth: 0 }}>
+        <main id="main-content" tabIndex={-1} className="no-scrollbar" style={{ flex: 1, minWidth: 0, height: '100vh', overflowY: 'auto' }}>
           <Topbar state={state} onQuick={onQuick} setView={setView} onSettings={onQuick.settings} onNotif={() => setNotifOpen(true)} library={library} reviews={reviews} follows={follows}/>
           <div style={{ maxWidth: 1320, margin: '0 auto', padding: '32px 48px 80px' }}>
             {children}
@@ -71,13 +86,33 @@ function ConnectionIndicator() {
 }
 
 function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, messages }) {
-  // KassaHub is a first-party plugin — gets its own sidebar tab with exclusive
-  // highlight treatment. We check subscription status live so the lock flips
-  // the instant the user subscribes.
-  const KASSAHUB_LISTING_ID = 'l-kassahub';
-  const kassaEntry = library?.items?.find((it) => it.listingId === KASSAHUB_LISTING_ID);
-  const kassaActive = !!(kassaEntry && kassaEntry.status === 'active'
-    && (!kassaEntry.expiresAt || kassaEntry.expiresAt > Date.now()));
+  // Zodiac theme gate — when active and the variant is loaded, delegate to
+  // dist/zodiac/views.jsx. The original liquid-glass sidebar below is left
+  // 100% untouched for every other theme.
+  if (T.zodiac && window.ZodiacSidebar) {
+    return <window.ZodiacSidebar view={view} setView={setView} state={state} onQuick={onQuick} library={library} wishlist={wishlist} follows={follows} messages={messages}/>;
+  }
+  // Admin gate — hit /admin/whoami once. Returns { role: 'admin'|'owner'|null }.
+  // When null (403/not an admin), the Admin nav item is hidden entirely. The
+  // hook is exposed as a global by admin.jsx; guard here for the case where
+  // admin.jsx hasn't loaded (shouldn't happen, but defensive).
+  const adminState = typeof window.useAdminRole === 'function' ? window.useAdminRole() : { role: null };
+  const adminRole = adminState?.role || null;
+  // Maker-studio gate — probes /maker/overview once and caches.
+  const hasMakerProducts = typeof window.useHasMakerProducts === 'function' ? window.useHasMakerProducts() : false;
+
+  // Hugin is the first-party plugin (Kassa product_id = "gleipnir") — gets
+  // its own sidebar tab with exclusive highlight treatment. We resolve the
+  // listing id by Kassa product_id so it tracks whichever real listing is
+  // wired up server-side, and falls back to the legacy mock id during the
+  // pre-publish window.
+  const huginListing = (window.LISTINGS || []).find((x) =>
+    (x.kassa_product_id || x.kassaProductId) === 'gleipnir',
+  );
+  const HUGIN_LISTING_ID = huginListing?.id || 'l-zephyro';
+  const zephyroEntry = library?.items?.find((it) => it.listingId === HUGIN_LISTING_ID);
+  const zephyroActive = !!(zephyroEntry && zephyroEntry.status === 'active'
+    && (!zephyroEntry.expiresAt || zephyroEntry.expiresAt > Date.now()));
 
   // "Feed" pip — number of listings from followed creators created since the
   // user's last visit to the Feed view. Hidden when already on Feed.
@@ -96,12 +131,46 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
     { id: 'store',       label: t('nav.store'),       icon: <IStore/> },
     { id: 'discover',    label: t('nav.discover'),    icon: <ICompass/> },
     { id: 'claim',       label: t('nav.claim'),       icon: <IGift/> },
-    { id: 'kassahub',    label: t('nav.kassahub'),    icon: <ListingTypeIcon type="plugin" size={17}/>, highlight: true, locked: !kassaActive },
+    { id: 'zephyro',     label: t('nav.zephyro'),     icon: <ListingTypeIcon type="plugin" size={17}/>, highlight: true, locked: !zephyroActive },
     { id: 'saved',       label: t('nav.saved'),       icon: <IHeart/>, badge: wishlist?.items?.length || 0 },
     { id: 'feed',        label: t('nav.feed'),        icon: <IFeed/>, newPip: feedNewCount },
+    // Members — Discord guild directory backed by /members. Always shown;
+    // bot keeps the list synced via gateway events.
+    { id: 'members',     label: 'Members',            icon: (
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+    ) },
     { id: 'messages',    label: t('nav.messages'),    icon: <IMessage/>, badge: messages?.unreadCount || 0 },
     { id: 'trophies',    label: t('nav.trophies'),    icon: <ITrophy/> },
+    // My Licenses — always shown for authed users; empty state sells the
+    // idea if they don't own any Kassa products yet. Inline SVG key icon
+    // since ui.jsx doesn't ship one.
+    { id: 'licenses',    label: t('nav.licenses'),    icon: (
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="8" cy="15" r="4"/>
+        <path d="M10.85 12.15 21 2M17 6l3 3M15 8l3 3"/>
+      </svg>
+    ) },
+    // Maker Studio — surfaces only when the user has at least one Kassa-backed
+    // listing (probed once at boot via /maker/overview; see effect below).
+    // Regular users never see the tab.
+    ...(hasMakerProducts ? [{ id: 'maker', label: t('nav.maker'), icon: (
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>
+      </svg>
+    ) }] : []),
     { id: 'profile',     label: t('nav.profile'),     icon: <IUser/> },
+    // Admin — gated by /admin/whoami. Shown only when server recognises the
+    // user as admin (maker-mod role) or owner. The item appears at the bottom
+    // of the static nav so it doesn't shuffle the usual layout for non-admins.
+    ...(adminRole ? [{ id: 'admin', label: adminRole === 'owner' ? 'Admin (owner)' : 'Admin', icon: (
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7z"/>
+      </svg>
+    ) }] : []),
   ];
   // Active plugins from the user's library — render below the static nav as a
   // separate group titled "Plugins". Each item routes to plugin:<listingId>.
@@ -109,15 +178,12 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
   const hasLibrary = library && library.items.length > 0;
   const pct = Math.round(((state.aura - ME.prevLevelAura)/(ME.nextLevelAura - ME.prevLevelAura))*100);
 
-  // Collapse state for the plugins group. Persisted so it sticks across reloads.
-  const [pluginsCollapsed, setPluginsCollapsed] = React.useState(() => {
-    try { return localStorage.getItem('elyhub.sidebar.pluginsCollapsed') === '1'; } catch { return false; }
-  });
-  const togglePluginsCollapsed = () => setPluginsCollapsed((v) => {
-    const nv = !v;
-    try { localStorage.setItem('elyhub.sidebar.pluginsCollapsed', nv ? '1' : '0'); } catch {}
-    return nv;
-  });
+  // Collapse state for the plugins group. Always starts collapsed on every
+  // session — owner preference: "venha nativamente recolhido, sempre". The
+  // user can still expand within the session (state held in memory), but
+  // we don't persist their choice; next app open starts collapsed again.
+  const [pluginsCollapsed, setPluginsCollapsed] = React.useState(true);
+  const togglePluginsCollapsed = () => setPluginsCollapsed((v) => !v);
 
   // "NEW" pip on the Marketplace item. Shows when there are listings created
   // after the last time the user visited the store, using createdAt stamps
@@ -135,9 +201,14 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
   }, [view.id]);
   const newListingCount = (window.LISTINGS || []).filter((l) => l.createdAt && l.createdAt > lastMktVisit).length;
   return (
-    <aside aria-label="Primary" style={{
+    <aside aria-label="Primary" className="no-scrollbar" style={{
       width: 240, flexShrink: 0, padding: '44px 20px 20px',
-      position: 'sticky', top: 0, height: '100vh',
+      // Each pane scrolls independently — see Shell's two-pane comment.
+      // Was `position: sticky; top: 0` back when the body scrolled; now the
+      // body is locked and this pane owns its own scroll region. The
+      // .no-scrollbar class hides the bar visually while keeping the
+      // overflow scrollable (wheel + trackpad still work).
+      height: '100vh', overflowY: 'auto',
       display: 'flex', flexDirection: 'column', gap: 8,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 14px 4px' }}>
@@ -159,12 +230,91 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
         </span>
       </div>
 
-      <Glass style={{ padding: 6, flexShrink: 0 }}>
+      {/* Nav wrapper — Glass panel restored (owner preference: keep the
+          glassmorphism card behind the nav items in default themes). We
+          drop the default 0 12px 50px outer shadow because the sidebar
+          sits flush against the main pane, and that big dark halo bleeds
+          to the right of the panel as a visible "shadow strip" between
+          sidebar and main. Inset highlight kept so the glass still has
+          a top edge. */}
+      <Glass style={{
+        padding: 6, flexShrink: 0,
+        boxShadow: `inset 0 1px 0 ${T.glassHi}, inset 0 0 0 0.5px rgba(255,255,255,0.02)`,
+      }}>
         <nav aria-label="Main navigation" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {items.map(it => {
             const active = view.id === it.id;
             const showNewPip = it.id === 'store' && newListingCount > 0 && !active;
-            // KassaHub gets a soft lilac→accent gradient background and a
+            // Hugin "anomaly" treatment — when the user is on a non-zodiac
+            // theme, the Hugin sidebar entry is styled with the zodiac palette
+            // (gold leaf border + ZIFlame icon + Cormorant italic) so it reads
+            // as a glimpse of the celestial realm bleeding into the normal UI.
+            // The Z palette + ZIFlame are global from tokens-zodiac.jsx /
+            // ui-zodiac.jsx which load on every theme. Returns the styled
+            // button directly, skipping the normal highlight path below.
+            if (it.id === 'zephyro' && !T.zodiac && window.Z) {
+              const Z = window.Z;
+              const Flame = window.ZIFlame;
+              const Lock  = window.ZILock;
+              return (
+                <button key={it.id} data-tour={`nav-${it.id}`} aria-current={active ? 'page' : undefined}
+                  aria-label={it.label} onClick={() => setView({ id: it.id })}
+                  title={it.locked ? 'Hugin · Subscription required' : 'Hugin · Active'}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '11px 12px',
+                    background: active
+                      ? `linear-gradient(180deg, ${Z.ink3}, ${Z.ink2})`
+                      : `linear-gradient(180deg, ${Z.ink2}, ${Z.ink})`,
+                    border: `1px solid ${active ? Z.gold : Z.hair3}`,
+                    borderRadius: 2,
+                    color: active ? Z.parch : Z.text,
+                    fontFamily: '"Cormorant Garamond","EB Garamond","Instrument Serif",Georgia,serif',
+                    fontStyle: 'italic', fontWeight: 600, fontSize: 15,
+                    cursor: 'pointer', textAlign: 'left',
+                    transition: 'all .2s',
+                    position: 'relative',
+                    boxShadow: active
+                      ? `inset 0 0 12px ${Z.goldGlow}, 0 0 16px ${Z.goldGlow}`
+                      : `inset 0 0 8px ${Z.goldGlow}, 0 0 14px rgba(201,162,78,0.20)`,
+                  }}>
+                  {/* gold leaf rule on left edge */}
+                  <span style={{
+                    position: 'absolute', left: 0, top: 0, bottom: 0, width: 2,
+                    background: `linear-gradient(180deg, transparent, ${Z.gold}, transparent)`,
+                  }}/>
+                  {Flame && React.createElement(Flame, { size: 16, color: Z.gold, sw: 1 })}
+                  <span style={{
+                    flex: 1,
+                    background: `linear-gradient(180deg, ${Z.goldHi} 0%, ${Z.gold} 50%, ${Z.goldLo} 100%)`,
+                    WebkitBackgroundClip: 'text', backgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent', color: 'transparent',
+                  }}>{it.label}</span>
+                  {it.locked && Lock && (
+                    <span title="Subscription required" style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: 20, height: 20,
+                      background: Z.ink, border: `1px solid ${Z.hair2}`,
+                      color: Z.gold,
+                    }}>
+                      {React.createElement(Lock, { size: 10, color: Z.gold })}
+                    </span>
+                  )}
+                  {!it.locked && (
+                    <span style={{
+                      padding: '2px 8px',
+                      background: `linear-gradient(180deg, ${Z.goldHi}, ${Z.gold} 50%, ${Z.goldLo})`,
+                      color: Z.ink,
+                      fontFamily: '"Cinzel","Cormorant SC",serif',
+                      fontWeight: 500, fontSize: 9, letterSpacing: '0.2em',
+                      textTransform: 'uppercase',
+                      boxShadow: `0 0 6px ${Z.goldGlow}`,
+                    }}>✦ ACTIVE</span>
+                  )}
+                </button>
+              );
+            }
+            // Zephyro gets a soft lilac→accent gradient background and a
             // padlock chip when not subscribed. Reads as "premium" without
             // shouting. Active sub flips the lock to a checkmark accent.
             const isHighlight = !!it.highlight;
@@ -280,11 +430,13 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
 
       {/* ── Plugins group — only shows if the user has at least one purchase
             (active plugin OR any library item, so MyLibrary stays accessible
-            after a sub expires). Renders as a separate Glass panel so it
-            visually reads as a "drawer" of installed extensions, not part of
-            the core nav. */}
+            after a sub expires). Glass panel matches the main nav above —
+            same outer-shadow override (avoid the dark strip on the right). */}
       {hasLibrary && (
-        <Glass style={{ padding: 6, flexShrink: 0 }}>
+        <Glass style={{
+          padding: 6, flexShrink: 0,
+          boxShadow: `inset 0 1px 0 ${T.glassHi}, inset 0 0 0 0.5px rgba(255,255,255,0.02)`,
+        }}>
           {/* Collapsible header — click to show/hide the plugin list. Chevron
               rotates 90° when collapsed. Counter stays visible either way. */}
           <button
@@ -308,7 +460,11 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
           {!pluginsCollapsed && (
             <nav aria-label="Installed plugins" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {activePlugins.map(({ entry, listing }) => {
-                const navId = `plugin:${listing.id}`;
+                // Hugin has a dedicated, more polished page (ZephyroView) —
+                // route the sidebar entry there instead of the generic
+                // PluginPanelView so we don't have two pages for the same plugin.
+                const isHugin = (listing.kassa_product_id || listing.kassaProductId) === 'gleipnir';
+                const navId = isHugin ? 'zephyro' : `plugin:${listing.id}`;
                 const active = view.id === navId;
                 const exp = expiryLabel(entry.expiresAt);
                 const expiringSoon = entry.expiresAt && (entry.expiresAt - Date.now()) < 3 * 86_400_000;
@@ -371,7 +527,24 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
                   }}>
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={active ? T.accentHi : 'currentColor'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>
                     <span style={{ flex: 1 }}>My Library</span>
-                    <span style={{ ...TY.small, fontSize: 10, color: T.text3, fontVariantNumeric: 'tabular-nums' }}>{library.items.length}</span>
+                    {(() => {
+                      // Stale localStorage can hold entries for listings that
+                      // were later removed/unpublished. Show the count of
+                      // items whose listing is still live in window.LISTINGS.
+                      const live = window.LISTINGS || [];
+                      const byId = new Map(live.map((l) => [l.id, l]));
+                      // Dedup tiered Kassa products (1key + 2key Hugin → 1).
+                      const keys = new Set();
+                      for (const it of library.items) {
+                        const l = byId.get(it.listingId);
+                        if (!l) continue;
+                        const kpid = l.kassa_product_id || l.kassaProductId;
+                        keys.add(kpid ? `kpid:${kpid}` : `id:${l.id}`);
+                      }
+                      return (
+                        <span style={{ ...TY.small, fontSize: 10, color: T.text3, fontVariantNumeric: 'tabular-nums' }}>{keys.size}</span>
+                      );
+                    })()}
                   </button>
                 );
               })()}
@@ -382,7 +555,13 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
 
       <div style={{ flex: 1 }}/>
 
-      <Glass style={{ padding: 18 }} data-tour="aura">
+      {/* Balance / aura panel — kept as Glass card. Same outer-shadow
+          override as the nav above, so its right edge doesn't paint a
+          dark strip into the main column. */}
+      <Glass style={{
+        padding: 18,
+        boxShadow: `inset 0 1px 0 ${T.glassHi}, inset 0 0 0 0.5px rgba(255,255,255,0.02)`,
+      }} data-tour="aura">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <div style={{ ...TY.micro, color: T.text3 }}>Balance</div>
           <button onClick={onQuick?.settings} style={{
@@ -688,7 +867,7 @@ function SearchBar({ setView, onQuick }) {
 
           <div style={{ height: 1, background: T.glassBorder, margin: '8px 2px' }}/>
           <div style={{ ...TY.mono, color: T.text3, fontSize: 10, padding: '6px 8px 4px' }}>
-            Try "kassahub", "plugin", "ines" — or press ↑↓ to navigate, ↵ to open
+            Try "hugin", "plugin", "ines" — or press ↑↓ to navigate, ↵ to open
           </div>
         </div>
       )}
@@ -740,6 +919,11 @@ function SearchBar({ setView, onQuick }) {
 }
 
 function Topbar({ state, onQuick, onNotif, setView, onSettings, library, reviews, follows }) {
+  // Zodiac theme gate — same pattern as Sidebar. Original glass topbar below
+  // stays untouched for non-zodiac themes.
+  if (T.zodiac && window.ZodiacTopbar) {
+    return <window.ZodiacTopbar state={state} onQuick={onQuick} onNotif={onNotif} setView={setView} onSettings={onSettings} library={library} reviews={reviews} follows={follows}/>;
+  }
   // Subscribe to auth changes so sign-in / sign-out re-render the topbar.
   // Before: authedUser was read once per render and signOut() mutated a
   // module-level var, so the button visually "did nothing" until something
@@ -909,3 +1093,7 @@ function MenuItem({ icon, label, onClick, danger }) {
     </button>
   );
 }
+
+// Expose host SearchBar so the Zodiac topbar (dist/zodiac/views.jsx) can
+// embed the real search instead of rendering a static placeholder.
+Object.assign(window, { SearchBar });

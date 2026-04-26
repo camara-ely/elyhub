@@ -56,7 +56,26 @@ function priceLine(l) {
 // the name opens the seller's profile.
 function SellerLine({ sellerId, onSeller, size = 11 }) {
   const seller = (window.MEMBERS || []).find((m) => m.id === sellerId);
-  if (!seller) return null;
+  // Fallback when the seller isn't in the client-side MEMBERS array — happens
+  // for backend-seeded demos (e.g. `demo-seller-0001`) and newly published
+  // listings before the user table is hydrated. Show a muted, unclickable
+  // "by Unknown" instead of collapsing the footer to an empty strip.
+  if (!seller) {
+    // If it's the current user's own listing, say "by you" — nicer than
+    // falling through the generic path. For everyone else we show
+    // "Creator" as a soft placeholder: data.jsx hydrates the real name
+    // shortly after /listings returns, so this only shows for a blink.
+    const me = window.ME;
+    const isMe = me && me.id === sellerId;
+    return (
+      <span style={{
+        ...TY.small, fontSize: size, color: T.text3,
+        display: 'inline-flex', alignItems: 'center', gap: 4, opacity: isMe ? 1 : 0.7,
+      }}>
+        by <span style={{ color: T.text2, fontWeight: 500 }}>{isMe ? 'you' : 'Creator'}</span>
+      </span>
+    );
+  }
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onSeller?.(seller); }}
@@ -114,23 +133,26 @@ function DownloadsChip({ n, size = 11 }) {
 // Called from ListingCard + ListingDetailView. Uses an onToggle callback so
 // the parent doesn't have to thread wishlist methods into every child.
 function HeartButton({ saved, onToggle, size = 18, solid = false }) {
+  // `solid` used to swap the entire circle to a pink gradient when saved — it
+  // read as a primary action rather than "saved" state and drowned out the
+  // adjacent Subscribe button. Now the circle is always dark glass; only the
+  // heart icon fills pink + a soft halo indicates the saved state, matching
+  // how the marketplace cards have always done it.
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onToggle?.(); }}
       title={saved ? 'Remove from saved' : 'Save for later'}
       style={{
         width: size + 14, height: size + 14, borderRadius: '50%',
-        background: solid
-          ? (saved ? `linear-gradient(135deg, #ff6b8f, #ff3d74)` : 'rgba(8,10,18,0.62)')
-          : 'rgba(8,10,18,0.62)',
+        background: 'rgba(8,10,18,0.62)',
         backdropFilter: 'blur(14px) saturate(180%)',
         WebkitBackdropFilter: 'blur(14px) saturate(180%)',
         border: `0.5px solid ${saved ? 'rgba(255,107,143,0.55)' : T.glassBorder}`,
         color: saved ? '#ff6b8f' : T.text3,
-        cursor: 'pointer', padding: 0,
+        cursor: 'pointer', padding: 0, flexShrink: 0,
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         transition: 'all .18s cubic-bezier(.2,.9,.3,1.15)',
-        boxShadow: saved ? '0 0 14px rgba(255,107,143,0.45)' : 'none',
+        boxShadow: saved ? '0 0 14px rgba(255,107,143,0.35)' : 'none',
       }}
     >
       <svg width={size} height={size} viewBox="0 0 24 24"
@@ -139,6 +161,11 @@ function HeartButton({ saved, onToggle, size = 18, solid = false }) {
            style={{
              transform: saved ? 'scale(1.06)' : 'scale(1)',
              transition: 'transform .18s cubic-bezier(.2,.9,.3,1.4)',
+             // Path's drawable extent is y=4.61..21.23 out of a 24-viewBox —
+             // ~0.6 units below geometric center. Nudge up so the glyph looks
+             // optically centered inside the circle.
+             transformOrigin: '50% 50%',
+             marginTop: -1,
            }}>
         <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
       </svg>
@@ -156,9 +183,33 @@ function HeartButton({ saved, onToggle, size = 18, solid = false }) {
 // Uses navigator.clipboard with a document.execCommand fallback for environments
 // that don't expose it (older WKWebView builds). Each option briefly flashes
 // "Copied" inside the menu so the user gets feedback without a toast spam.
-function ShareMenu({ listing, seller, onClose, anchorRef }) {
+function ShareMenu({ listing, seller, onClose, anchorRef, onSendDM }) {
   const [copied, setCopied] = React.useState(null); // which item just flashed
   const menuRef = React.useRef(null);
+
+  // Compute viewport-relative position off the anchor button. We portal to
+  // <body> so that sibling cards with `backdrop-filter` (each a fresh
+  // stacking context in WebKit) can't paint over us. Recomputed on resize
+  // and scroll so the menu tracks the anchor if the page moves under it.
+  const [pos, setPos] = React.useState(() => {
+    const r = anchorRef?.current?.getBoundingClientRect?.();
+    return r ? { top: r.bottom + 8, right: window.innerWidth - r.right } : { top: 0, right: 0 };
+  });
+  React.useEffect(() => {
+    const update = () => {
+      const r = anchorRef?.current?.getBoundingClientRect?.();
+      if (r) setPos({ top: r.bottom + 8, right: window.innerWidth - r.right });
+    };
+    update();
+    window.addEventListener('resize', update);
+    // Use capture so we catch scrolls on inner containers (the page often
+    // scrolls inside a wrapper div, not the window).
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [anchorRef]);
 
   // Close on outside click or Escape.
   React.useEffect(() => {
@@ -205,12 +256,19 @@ function ShareMenu({ listing, seller, onClose, anchorRef }) {
   const plain = `${listing.title} — ${priceLine}${seller ? ` by ${seller.name}` : ''}`;
 
   const items = [
-    { id: 'link',     label: 'Copy link',           sub: deepLink,                     text: deepLink  },
-    { id: 'discord',  label: 'Copy as Discord post', sub: `${listing.title} + price + link`, text: markdown },
-    { id: 'plain',    label: 'Copy title + price',   sub: plain,                        text: plain    },
+    // DM item is a special action — doesn't copy, opens the picker modal.
+    // Kind marker lets activate() branch.
+    { id: 'dm',       kind: 'dm',   label: 'Send to someone…',     sub: 'Pick a member · delivers via Discord' },
+    { id: 'link',     kind: 'copy', label: 'Copy link',            sub: deepLink,                                text: deepLink  },
+    { id: 'discord',  kind: 'copy', label: 'Copy as Discord post', sub: `${listing.title} + price + link`,       text: markdown },
+    { id: 'plain',    kind: 'copy', label: 'Copy title + price',   sub: plain,                                   text: plain    },
   ];
 
   const activate = async (it) => {
+    if (it.kind === 'dm') {
+      onSendDM?.();
+      return;
+    }
     const ok = await writeClipboard(it.text);
     if (ok) {
       setCopied(it.id);
@@ -219,12 +277,12 @@ function ShareMenu({ listing, seller, onClose, anchorRef }) {
     }
   };
 
-  return (
+  const menuNode = (
     <div
       ref={menuRef}
       onClick={(e) => e.stopPropagation()}
       style={{
-        position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 70,
+        position: 'fixed', top: pos.top, right: pos.right, zIndex: 9000,
         minWidth: 280,
         ...glass(2, {
           padding: 6, borderRadius: T.r.md,
@@ -261,7 +319,9 @@ function ShareMenu({ listing, seller, onClose, anchorRef }) {
             }}>
               {isCopied
                 ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5 9-10"/></svg>
-                : <ICopy size={13}/>}
+                : it.kind === 'dm'
+                  ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+                  : <ICopy size={13}/>}
             </span>
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: 'block', fontSize: 13, fontWeight: 500 }}>{isCopied ? 'Copied!' : it.label}</span>
@@ -278,40 +338,258 @@ function ShareMenu({ listing, seller, onClose, anchorRef }) {
       })}
     </div>
   );
+  return ReactDOM.createPortal(menuNode, document.body);
+}
+
+// ──── DMPickerModal — pick a member to DM this listing to ────
+//
+// Posts the listing into the in-app DM thread with the chosen member
+// (via useMessages.send) and navigates to that thread so the user sees
+// their message land and can follow up. No Discord round-trip — we used
+// to punt out via the discord:// deep-link but that felt broken (modal
+// closed, nothing visible happened) so we keep it inside the app.
+//
+// Picks the recipient list from window.MEMBERS (populated by the
+// leaderboard poll). If MEMBERS is empty (fresh login, pre-hydrate) we
+// show a hint rather than a blank list. Recent recipients float to the
+// top via localStorage (`ely.dm.recent.v1`).
+const DM_RECENT_KEY = 'ely.dm.recent.v1';
+function loadDmRecent() {
+  try {
+    const raw = localStorage.getItem(DM_RECENT_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+function saveDmRecent(ids) {
+  try { localStorage.setItem(DM_RECENT_KEY, JSON.stringify(ids.slice(0, 12))); } catch {}
+}
+
+function DMPickerModal({ listing, seller, messages, setView, onClose }) {
+  if (T.zodiac && window.ZodiacDMPickerModal) {
+    return <window.ZodiacDMPickerModal listing={listing} seller={seller} messages={messages} setView={setView} onClose={onClose}/>;
+  }
+  const [q, setQ] = React.useState('');
+  const inputRef = React.useRef(null);
+  const recentIds = loadDmRecent();
+  const me = window.ME || {};
+  const members = Array.isArray(window.MEMBERS) ? window.MEMBERS : [];
+
+  // Filter out self + the seller (sending a listing to its own seller is
+  // odd). Apply query filter (name/tag, case-insensitive). Recent ids
+  // sort first, then alphabetical.
+  const qNorm = q.trim().toLowerCase();
+  const filtered = members
+    .filter((m) => m.id !== me.id && m.id !== seller?.id)
+    .filter((m) => {
+      if (!qNorm) return true;
+      return (m.name || '').toLowerCase().includes(qNorm)
+          || (m.tag || '').toLowerCase().includes(qNorm);
+    })
+    .sort((a, b) => {
+      const ai = recentIds.indexOf(a.id);
+      const bi = recentIds.indexOf(b.id);
+      if (ai !== bi) {
+        if (ai < 0) return 1;
+        if (bi < 0) return -1;
+        return ai - bi;
+      }
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+  React.useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 60);
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => { clearTimeout(t); window.removeEventListener('keydown', onKey); };
+  }, [onClose]);
+
+  const send = (member) => {
+    // Post a listing *attachment* rather than a text blob with a URL — the
+    // thread view renders it as a clickable card (cover + title + price)
+    // via the `attachment` field on the message.
+    let threadId = null;
+    try {
+      threadId = messages?.startThread?.(member.id) || null;
+      messages?.send?.(member.id, '', { type: 'listing', id: listing.id });
+    } catch (err) {
+      console.warn('[dm-picker] send failed', err);
+      try { ElyNotify?.toast?.({ text: `Couldn't send — try again`, kind: 'warn' }); } catch {}
+      return;
+    }
+
+    // Remember this recipient so they float to the top of the picker next time.
+    const next = [member.id, ...recentIds.filter((x) => x !== member.id)];
+    saveDmRecent(next);
+
+    try {
+      ElyNotify?.toast?.({
+        text: `Sent to ${member.name}`,
+        kind: 'success',
+      });
+    } catch {}
+    onClose?.();
+    // Jump straight into the conversation so the user sees their message
+    // land (and can type a follow-up without hunting for the thread).
+    if (threadId && setView) {
+      setView({ id: 'messages', threadId });
+    }
+  };
+
+  // Portal to <body> so the fixed overlay escapes any transform/filter
+  // ancestor that would otherwise create a containing block and trap it
+  // inline next to the Share button (we saw this exact bug — modal rendered
+  // glued to the trigger instead of covering the viewport).
+  const overlay = (
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.55)',
+        backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20,
+        animation: 'fadeIn .14s ease',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%', maxWidth: 440, maxHeight: '80vh',
+          display: 'flex', flexDirection: 'column',
+          ...glass(2, { padding: 14, borderRadius: T.r.lg }),
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div>
+            <div style={{ ...TY.micro, color: T.text3 }}>SHARE</div>
+            <div style={{ ...TY.h3, color: T.text, fontSize: 18, marginTop: 2 }}>
+              {listing.title}
+            </div>
+            <div style={{ ...TY.small, color: T.text3, fontSize: 11, marginTop: 2 }}>
+              Pick a friend to send this listing to
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            title="Close"
+            style={{
+              width: 28, height: 28, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.04)', border: `0.5px solid ${T.glassBorder}`,
+              color: T.text3, cursor: 'pointer', padding: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >×</button>
+        </div>
+        <input
+          ref={inputRef}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search members…"
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            padding: '10px 12px', borderRadius: T.r.md,
+            background: 'rgba(255,255,255,0.04)',
+            border: `0.5px solid ${T.glassBorder}`,
+            color: T.text, fontFamily: T.fontSans, fontSize: 13,
+            outline: 'none', marginBottom: 10,
+          }}
+        />
+        <div style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
+          {filtered.length === 0 ? (
+            <div style={{ ...TY.small, color: T.text3, padding: '20px 8px', textAlign: 'center' }}>
+              {members.length === 0
+                ? 'Member list is still loading — try again in a moment.'
+                : 'No matches.'}
+            </div>
+          ) : filtered.map((m, i) => {
+            const isRecent = recentIds.includes(m.id);
+            return (
+              <button
+                key={m.id}
+                onClick={() => send(m)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  width: '100%', textAlign: 'left',
+                  padding: '9px 8px', borderRadius: T.r.sm,
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: T.text, transition: 'background .12s',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <div style={{
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: m.avatar ? `url(${m.avatar}) center/cover` : 'rgba(255,255,255,0.06)',
+                  border: `0.5px solid ${T.glassBorder}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: T.text3, fontSize: 12, fontWeight: 600,
+                  flexShrink: 0,
+                }}>
+                  {!m.avatar && (m.name || '?').slice(0, 1).toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: T.text }}>{m.name}</div>
+                  <div style={{ fontSize: 11, color: T.text3, fontFamily: T.fontMono }}>@{m.tag || m.id.slice(0, 6)}</div>
+                </div>
+                {isRecent && i < 3 && (
+                  <span style={{
+                    ...TY.micro, color: T.text3, fontSize: 9, letterSpacing: 0.5,
+                    padding: '2px 6px', borderRadius: T.r.pill,
+                    background: 'rgba(255,255,255,0.04)',
+                    border: `0.5px solid ${T.glassBorder}`,
+                  }}>RECENT</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+  return ReactDOM.createPortal(overlay, document.body);
 }
 
 // ShareTrigger — glass pill that opens the ShareMenu popover. Positioned
 // relatively so the menu anchors off this element. Matches HeartButton sizing
 // so the two sit cleanly side-by-side in the CTA row.
-function ShareTrigger({ listing, seller }) {
-  const [open, setOpen] = React.useState(false);
-  const btnRef = React.useRef(null);
+function ShareTrigger({ listing, seller, messages, setView }) {
+  // We used to pop an intermediate ShareMenu with copy-link / copy-markdown
+  // options, but the only one anyone ever wanted was "Send to a friend",
+  // and the rest felt like noise. Click now opens the DM picker directly.
+  const [dmOpen, setDmOpen] = React.useState(false);
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', flexShrink: 0 }}>
       <button
-        ref={btnRef}
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        title="Share"
+        onClick={(e) => { e.stopPropagation(); setDmOpen(true); }}
+        title="Share with a friend"
         style={{
           width: 34, height: 34, borderRadius: '50%',
-          background: open ? 'rgba(255,255,255,0.10)' : 'rgba(8,10,18,0.62)',
+          background: dmOpen ? 'rgba(255,255,255,0.10)' : 'rgba(8,10,18,0.62)',
           backdropFilter: 'blur(14px) saturate(180%)',
           WebkitBackdropFilter: 'blur(14px) saturate(180%)',
-          border: `0.5px solid ${open ? T.glassBorder2 : T.glassBorder}`,
-          color: open ? T.text : T.text3,
+          border: `0.5px solid ${dmOpen ? T.glassBorder2 : T.glassBorder}`,
+          color: dmOpen ? T.text : T.text3,
           cursor: 'pointer', padding: 0,
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           transition: 'all .18s cubic-bezier(.2,.9,.3,1.15)',
         }}
       >
-        <IShare size={15}/>
+        {/* The share glyph (two nodes on the right, one on the left) has its
+            visual centroid ~2 units right of the 24-viewBox center. Nudge
+            left so it sits cleanly inside the circle rather than looking
+            like it's drifting right. */}
+        <span style={{ display: 'inline-flex', marginLeft: -1 }}>
+          <IShare size={15}/>
+        </span>
       </button>
-      {open && (
-        <ShareMenu
+      {dmOpen && (
+        <DMPickerModal
           listing={listing}
           seller={seller}
-          anchorRef={btnRef}
-          onClose={() => setOpen(false)}
+          messages={messages}
+          setView={setView}
+          onClose={() => setDmOpen(false)}
         />
       )}
     </div>
@@ -482,54 +760,44 @@ function ListingCard({ l, state, onOpen, onSeller, compact = false, index = 0, w
                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
                onError={(e) => { e.currentTarget.style.display = 'none'; }}/>
         )}
-        {/* Type chip — top-left */}
+        {/* Type chip — top-left. Icon-only when the cover has room for
+            text would push us over budget; kept tight so the cover art
+            breathes. NEW flag lives in the same chip as a small accent dot
+            rather than its own pill, which was visually shouting. */}
         <span style={{
           position: 'absolute', top: 10, left: 10,
           display: 'inline-flex', alignItems: 'center', gap: 5,
-          padding: '4px 9px', borderRadius: T.r.pill,
+          padding: '3px 8px', borderRadius: T.r.pill,
           background: 'rgba(8,10,18,0.62)',
           backdropFilter: 'blur(14px) saturate(180%)',
           WebkitBackdropFilter: 'blur(14px) saturate(180%)',
           border: `0.5px solid ${meta.hue}55`,
           color: meta.hue,
-          fontFamily: T.fontSans, fontWeight: 600, fontSize: 10,
+          fontFamily: T.fontSans, fontWeight: 600, fontSize: 9,
           letterSpacing: '0.08em', textTransform: 'uppercase',
         }}>
-          <ListingTypeIcon type={l.type} size={11}/>
+          <ListingTypeIcon type={l.type} size={10}/>
           {meta.label.replace(/s$/, '')}
+          {isNew && (
+            <span style={{
+              width: 5, height: 5, borderRadius: '50%',
+              background: T.accentHi,
+              boxShadow: `0 0 6px ${T.accent}cc`,
+              marginLeft: 2,
+            }}/>
+          )}
         </span>
-        {/* Top-right badge stack — Heart + NEW floats above Monthly. */}
-        <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+        {/* Top-right — heart only. Monthly/Weekly billing is already signaled
+            by the "/mo" suffix beside the price, so a cover badge was just
+            noise. Hidden on your own listings — saving something you sell
+            doesn't make sense. */}
+        <div style={{ position: 'absolute', top: 10, right: 10 }}>
           {wishlist && (
             <HeartButton
               saved={wishlist.has(l.id)}
               onToggle={() => wishlist.toggle(l.id)}
               size={14}
             />
-          )}
-          {isNew && (
-            <span style={{
-              padding: '4px 9px', borderRadius: T.r.pill,
-              background: `linear-gradient(135deg, ${T.accentHi}, ${T.accent})`,
-              color: '#fff',
-              fontFamily: T.fontSans, fontWeight: 700, fontSize: 10,
-              letterSpacing: '0.1em', textTransform: 'uppercase',
-              boxShadow: `0 2px 10px ${T.accent}99`,
-            }}>New</span>
-          )}
-          {l.billing === 'monthly' && (
-            <span style={{
-              padding: '4px 9px', borderRadius: T.r.pill,
-              background: 'rgba(8,10,18,0.62)',
-              backdropFilter: 'blur(14px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(14px) saturate(180%)',
-              border: `0.5px solid ${T.accentHi}66`,
-              color: T.accentHi,
-              fontFamily: T.fontSans, fontWeight: 600, fontSize: 10,
-              letterSpacing: '0.08em', textTransform: 'uppercase',
-            }}>
-              Monthly
-            </span>
           )}
         </div>
       </div>
@@ -556,9 +824,19 @@ function ListingCard({ l, state, onOpen, onSeller, compact = false, index = 0, w
           {l.downloads > 0 && <DownloadsChip n={l.downloads}/>}
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, paddingTop: 8, borderTop: `0.5px solid ${T.glassBorder}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, paddingTop: 8, borderTop: `0.5px solid ${T.glassBorder}`, gap: 8 }}>
         <SellerLine sellerId={l.sellerId} onSeller={onSeller}/>
-        {levelLocked && <Tag muted><ILock size={10}/>&nbsp;L{l.level}</Tag>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {/* Posted-date stamp — only for listings with a real createdAt (seed
+              demos don't have one). Helps users gauge freshness when sorting
+              by date or browsing "Just launched". */}
+          {l.createdAt && (
+            <span style={{ ...TY.small, color: T.text3, fontSize: 10 }} title={new Date(l.createdAt).toLocaleString()}>
+              {relativeTime(l.createdAt)}
+            </span>
+          )}
+          {levelLocked && <Tag muted><ILock size={10}/>&nbsp;L{l.level}</Tag>}
+        </div>
       </div>
     </Glass>
   );
@@ -610,7 +888,11 @@ function TopCreatorsRow({ onSeller }) {
 }
 
 // ──── MarketHome — landing view of /store ────
-function MarketHomeView({ state, setView, onQuick, focusId, wishlist, recent, blocks }) {
+function MarketHomeView({ state, setView, onQuick, focusId, wishlist, recent, blocks, onPublish }) {
+  // Zodiac gate — delegates to the celestial variant. Original below untouched.
+  if (T.zodiac && window.ZodiacMarketHomeView) {
+    return <window.ZodiacMarketHomeView state={state} setView={setView} onQuick={onQuick} focusId={focusId} wishlist={wishlist} recent={recent} blocks={blocks} onPublish={onPublish}/>;
+  }
   const [activeType, setActiveType] = React.useState('all');
   const [query, setQuery] = React.useState('');
   const [sort, setSort] = React.useState('trending'); // trending | new | priceAsc | priceDesc | rating
@@ -628,8 +910,24 @@ function MarketHomeView({ state, setView, onQuick, focusId, wishlist, recent, bl
   useFocusHighlight(focusId);
 
   // Drop listings from blocked sellers out of every derived list below.
-  const all = (window.LISTINGS || []).filter((l) => !(blocks && blocks.has(l.sellerId)));
+  // First-party Kassa products (Hugin etc.) DO appear in the marketplace —
+  // owner reverted the earlier "hide them entirely" rule because removing
+  // them made the storefront look incomplete. Tier-alias rows are still
+  // collapsed via dedupTieredListings so a tiered product (1key + 2key)
+  // shows as one card; clicking it still routes to the dedicated Zephyro
+  // page (see ListingDetailView's isHugin redirect).
+  const baseListings = window.dedupTieredListings
+    ? window.dedupTieredListings(window.LISTINGS || [])
+    : (window.LISTINGS || []);
+  const all = baseListings
+    .filter((l) => !(blocks && blocks.has(l.sellerId)));
   const featured = all.filter((l) => l.featured);
+  // Freshly published listings, newest first. Its own strip right under the
+  // hero so a creator who just hit "Publish" sees their item immediately
+  // without scrolling past trending/top creators/etc.
+  const justLaunched = [...all]
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .slice(0, 8);
   const trending = [...all].sort((a, b) => (b.downloads || 0) - (a.downloads || 0)).slice(0, 6);
 
   // Text search matches title, tagline, tags, seller name. Case-insensitive.
@@ -665,6 +963,7 @@ function MarketHomeView({ state, setView, onQuick, focusId, wishlist, recent, bl
   const sortFns = {
     trending:  (a, b) => (b.downloads || 0) - (a.downloads || 0),
     new:       (a, b) => (b.createdAt || 0) - (a.createdAt || 0),
+    oldest:    (a, b) => (a.createdAt || 0) - (b.createdAt || 0),
     priceAsc:  (a, b) => (a.price || 0) - (b.price || 0),
     priceDesc: (a, b) => (b.price || 0) - (a.price || 0),
     rating:    (a, b) => (effectiveRating(b).rating) - (effectiveRating(a).rating),
@@ -710,10 +1009,33 @@ function MarketHomeView({ state, setView, onQuick, focusId, wishlist, recent, bl
             Plugins, themes, sound packs, 3D rigs and more — built by the community, paid in aura.
           </div>
         </div>
-        <Glass style={{ padding: '14px 22px', textAlign: 'right' }}>
-          <div style={{ ...TY.micro, color: T.text3, marginBottom: 4 }}>Your balance</div>
-          <div style={{ ...TY.numMed, color: T.accentHi }}>{fmt(state.aura)}</div>
-        </Glass>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* "+ Publish" action lives here (top-right of the marketplace
+              header) instead of buried in the profile so creators have a
+              one-click entry into the publish flow from the page they
+              already browse their competition on. */}
+          {onPublish && (
+            <button
+              onClick={onPublish}
+              style={{
+                padding: '12px 20px', borderRadius: T.r.pill, border: 'none',
+                background: `linear-gradient(135deg, ${T.accentHi}, ${T.accent})`,
+                color: '#fff', cursor: 'pointer',
+                fontFamily: T.fontSans, fontWeight: 600, fontSize: 13,
+                boxShadow: `0 4px 18px ${T.accent}66`,
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+              }}
+              title="Publish a listing"
+            >
+              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
+              Publish
+            </button>
+          )}
+          <Glass style={{ padding: '14px 22px', textAlign: 'right' }}>
+            <div style={{ ...TY.micro, color: T.text3, marginBottom: 4 }}>Your balance</div>
+            <div style={{ ...TY.numMed, color: T.accentHi }}>{fmt(state.aura)}</div>
+          </Glass>
+        </div>
       </div>
 
       {/* ── Featured hero ── */}
@@ -722,6 +1044,54 @@ function MarketHomeView({ state, setView, onQuick, focusId, wishlist, recent, bl
           <SectionTitle label="Featured this week" meta={`${featured.length} picks`}/>
           <div style={{ display: 'grid', gridTemplateColumns: featured.length === 1 ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
             {featured.slice(0, 3).map((l) => <FeaturedHeroCard key={l.id} l={l} state={state} onOpen={openListing} onSeller={openSeller}/>)}
+          </div>
+        </div>
+      )}
+
+      {/* ── Just launched ── */}
+      {/* Newest publishes, horizontal scroll. Sits directly under the hero so
+          a creator who just published sees their own listing without scrolling.
+          Hidden if there's nothing — avoids an empty rail on a fresh install. */}
+      {justLaunched.length > 0 && (
+        <div style={{ marginBottom: 36 }}>
+          <SectionTitle
+            label="Just launched"
+            meta="Fresh off the press"
+            action={
+              <button
+                onClick={() => { setSort('new'); setActiveType('all'); }}
+                style={{
+                  background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                  ...TY.small, color: T.text3, fontSize: 11,
+                }}
+                title="See all sorted by newest"
+              >
+                See all →
+              </button>
+            }
+          />
+          <div style={{
+            display: 'grid',
+            gridAutoFlow: 'column',
+            gridAutoColumns: 'minmax(220px, 240px)',
+            gap: 12,
+            overflowX: 'auto',
+            paddingBottom: 8,
+            scrollSnapType: 'x proximity',
+          }}>
+            {justLaunched.map((l, i) => (
+              <div key={l.id} style={{ scrollSnapAlign: 'start' }}>
+                <ListingCard
+                  l={l}
+                  state={state}
+                  onOpen={openListing}
+                  onSeller={openSeller}
+                  index={i}
+                  compact
+                  wishlist={wishlist}
+                />
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -916,6 +1286,7 @@ function MarketHomeView({ state, setView, onQuick, focusId, wishlist, recent, bl
           >
             <option value="trending">Trending</option>
             <option value="new">Newest</option>
+            <option value="oldest">Oldest</option>
             <option value="priceAsc">Price ↑</option>
             <option value="priceDesc">Price ↓</option>
             <option value="rating">Top rated</option>
@@ -1266,7 +1637,17 @@ function relativeTime(ts) {
 // edit, remove) → optional seller reply → optional reply compose. The inline
 // edit mode reuses StarPicker so the write/edit UI feel identical.
 function ReviewItem({ review, listing, reviews, onSeller, canSellerReply, verified, reports, blocks }) {
-  const author = (window.MEMBERS || []).find((m) => m.id === review.authorId);
+  // Prefer MEMBERS lookup (full record incl. level, tag) when available —
+  // the real-time leaderboard keeps it fresh. Fall back to the author
+  // fields baked into remote reviews so rows render cold, before MEMBERS
+  // has hydrated the author.
+  const memberRow = (window.MEMBERS || []).find((m) => m.id === review.authorId);
+  const author = memberRow || (review.authorName ? {
+    id: review.authorId,
+    name: review.authorName,
+    avatar: review.authorAvatar || '',
+    tag: '',
+  } : null);
   const me = window.ME || {};
   const isMine = (me.id || 'me') === review.authorId && !review.seed;
   const isSeller = canSellerReply && !!listing && listing.sellerId === me.id;
@@ -1279,6 +1660,20 @@ function ReviewItem({ review, listing, reviews, onSeller, canSellerReply, verifi
   const [editText, setEditText] = React.useState(review.text || '');
   const [replyOpen, setReplyOpen] = React.useState(false);
   const [replyText, setReplyText] = React.useState(review.reply?.text || '');
+  // Arm+commit for destructive actions (window.confirm is a no-op in Tauri's
+  // WKWebView — see shell.jsx:769). First click arms; second within 3s commits.
+  const [armedRemoveReply, setArmedRemoveReply] = React.useState(false);
+  const [armedRemoveReview, setArmedRemoveReview] = React.useState(false);
+  React.useEffect(() => {
+    if (!armedRemoveReply) return;
+    const t = setTimeout(() => setArmedRemoveReply(false), 3000);
+    return () => clearTimeout(t);
+  }, [armedRemoveReply]);
+  React.useEffect(() => {
+    if (!armedRemoveReview) return;
+    const t = setTimeout(() => setArmedRemoveReview(false), 3000);
+    return () => clearTimeout(t);
+  }, [armedRemoveReview]);
 
   const saveEdit = () => {
     if (!editRating) return;
@@ -1296,7 +1691,12 @@ function ReviewItem({ review, listing, reviews, onSeller, canSellerReply, verifi
     }
   };
   const removeReply = () => {
-    if (!confirm('Remove your reply?')) return;
+    if (!armedRemoveReply) {
+      setArmedRemoveReply(true);
+      try { ElyNotify?.toast?.({ text: 'Click again to remove your reply', kind: 'warn' }); } catch {}
+      return;
+    }
+    setArmedRemoveReply(false);
     reviews?.removeReply?.(review.id);
   };
 
@@ -1411,9 +1811,17 @@ function ReviewItem({ review, listing, reviews, onSeller, canSellerReply, verifi
               <>
                 <button onClick={() => setEditing(true)} style={linkBtn}>Edit</button>
                 <button
-                  onClick={() => { if (confirm('Remove your review?')) reviews?.remove?.(review.id); }}
-                  style={{ ...linkBtn, color: T.text3 }}
-                >Remove</button>
+                  onClick={() => {
+                    if (!armedRemoveReview) {
+                      setArmedRemoveReview(true);
+                      try { ElyNotify?.toast?.({ text: 'Click again to remove your review', kind: 'warn' }); } catch {}
+                      return;
+                    }
+                    setArmedRemoveReview(false);
+                    reviews?.remove?.(review.id);
+                  }}
+                  style={{ ...linkBtn, color: armedRemoveReview ? '#ff6b7a' : T.text3 }}
+                >{armedRemoveReview ? 'Click again' : 'Remove'}</button>
               </>
             )}
             {isSeller && !review.reply && !replyOpen && (
@@ -1454,8 +1862,8 @@ function ReviewItem({ review, listing, reviews, onSeller, canSellerReply, verifi
                 {relativeTime(review.reply.createdAt)}
               </span>
               {isSeller && (
-                <button onClick={removeReply} style={{ ...linkBtn, marginLeft: 'auto', fontSize: 10 }}>
-                  Remove
+                <button onClick={removeReply} style={{ ...linkBtn, marginLeft: 'auto', fontSize: 10, color: armedRemoveReply ? '#ff6b7a' : T.text3 }}>
+                  {armedRemoveReply ? 'Click again' : 'Remove'}
                 </button>
               )}
             </div>
@@ -1538,8 +1946,14 @@ function ReviewsSection({ listing, library, reviews, setView, reports, blocks })
   const owns = !!(ownedEntry && ownedEntry.status === 'active'
     && (!ownedEntry.expiresAt || ownedEntry.expiresAt > Date.now()));
   const isOwn = listing.sellerId === me.id;
+  const signedIn = !!window.ElyAPI?.isSignedIn?.();
   const already = reviews?.hasReviewed?.(listing.id);
-  const canWrite = owns && !isOwn && !already;
+  // Show the write form for any signed-in non-seller who hasn't reviewed
+  // this listing yet. The backend enforces actual ownership (user_library)
+  // — we surface a toast if POST returns `not_owned`. Gating UI on the
+  // local library would hide the form for users whose library hasn't
+  // synced (e.g. fresh login on another device).
+  const canWrite = signedIn && !isOwn && !already;
 
   // Filter out reviews authored by users the current viewer has blocked.
   // Done before rating filter so the rating histogram reflects the blocked-
@@ -1565,12 +1979,6 @@ function ReviewsSection({ listing, library, reviews, setView, reports, blocks })
     setRating(0);
     setText('');
     try { ElyNotify?.toast?.({ text: 'Review posted — thanks!', kind: 'success' }); } catch {}
-  };
-
-  const removeMine = (id) => {
-    if (!confirm('Remove your review?')) return;
-    reviews?.remove?.(id);
-    try { ElyNotify?.toast?.({ text: 'Review removed', kind: 'info' }); } catch {}
   };
 
   const openSeller = (m) => setView?.({ id: 'profile', userId: m.id });
@@ -1693,9 +2101,13 @@ function ReviewsSection({ listing, library, reviews, setView, reports, blocks })
           </div>
         </div>
       )}
-      {!canWrite && !already && !isOwn && stats.count > 0 && (
+      {!canWrite && !already && (
         <div style={{ ...TY.small, color: T.text3, fontSize: 11, marginBottom: 12, fontStyle: 'italic' }}>
-          {owns ? '' : 'Only owners can leave reviews.'}
+          {isOwn
+            ? "You can't review your own listing."
+            : !signedIn
+              ? 'Sign in to leave a review.'
+              : ''}
         </div>
       )}
 
@@ -1901,8 +2313,24 @@ function ListingMediaGallery({ listing, meta, items, active, setActive, onLightb
 }
 
 // ──── ListingDetailView — full page ────
-function ListingDetailView({ state, setView, onQuick, focusId, library, purchaseListing, reviews, wishlist, follows, recent, messages, coupons }) {
+function ListingDetailView({ state, setView, onQuick, focusId, library, purchaseListing, reviews, wishlist, follows, recent, messages, coupons, reports, blocks }) {
+  // Zodiac gate — delegates to celestial variant. Original below untouched.
+  if (T.zodiac && window.ZodiacListingDetailView) {
+    return <window.ZodiacListingDetailView state={state} setView={setView} onQuick={onQuick} focusId={focusId} library={library} purchaseListing={purchaseListing} reviews={reviews} wishlist={wishlist} follows={follows} recent={recent} messages={messages} coupons={coupons} reports={reports} blocks={blocks}/>;
+  }
   const l = (window.LISTINGS || []).find((x) => x.id === focusId);
+  // First-party Hugin listings (any tier sharing kassa_product_id='gleipnir')
+  // have a dedicated, richer page. Always redirect to ZephyroView so the
+  // generic detail page never shows for Hugin — same rule applied to
+  // PluginPanelView. Mounted as a useEffect so the redirect runs after the
+  // initial render commits and React doesn't complain about setState during
+  // render.
+  const isHugin = l && (l.kassa_product_id || l.kassaProductId) === 'gleipnir';
+  React.useEffect(() => {
+    if (isHugin) setView({ id: 'zephyro' });
+  }, [isHugin]);
+  if (isHugin) return null;
+
   if (!l) {
     return (
       <Glass style={{ padding: 40, textAlign: 'center' }}>
@@ -1991,7 +2419,12 @@ function ListingDetailView({ state, setView, onQuick, focusId, library, purchase
   // Exclude listings the user already owns from "Related" — if they already
   // have it, suggesting it again is wasted real estate.
   const ownedIds = new Set((library?.items || []).map((it) => it.listingId));
-  const related = (window.LISTINGS || [])
+  // Dedup tier-alias rows (Hugin 1key + 2key share kassa_product_id) so
+  // Related doesn't surface the same product twice as separate cards.
+  const relatedSource = window.dedupTieredListings
+    ? window.dedupTieredListings(window.LISTINGS || [])
+    : (window.LISTINGS || []);
+  const related = relatedSource
     .filter((x) => x.id !== l.id && !ownedIds.has(x.id) && (x.type === l.type || x.sellerId === l.sellerId))
     .slice(0, 4);
 
@@ -2111,7 +2544,11 @@ function ListingDetailView({ state, setView, onQuick, focusId, library, purchase
                 </span>
               )}
             </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'stretch', marginTop: 16 }}>
+            {/* Center-align so the round icon buttons sit on the same
+                optical baseline as the pill's label. `stretch` used to
+                pull the circles taller than wide, drifting the glyphs
+                upward. */}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 16 }}>
             <button
               disabled={(!alreadyHas && (levelLocked || state.aura < effectivePrice)) || pending}
               onClick={onPrimary}
@@ -2136,15 +2573,16 @@ function ListingDetailView({ state, setView, onQuick, focusId, library, purchase
                 : (state.aura < effectivePrice) ? `Need ${fmt(effectivePrice - state.aura)} more aura`
                 : (isSub ? 'Subscribe' : 'Redeem')}
             </button>
-            {wishlist && (
+            {/* Hide heart on your own listing — saving something you sell
+                is meaningless and clutters the CTA row. */}
+            {wishlist && l.sellerId !== (window.ME?.id) && (
               <HeartButton
                 saved={wishlist.has(l.id)}
                 onToggle={() => wishlist.toggle(l.id)}
                 size={20}
-                solid
               />
             )}
-            <ShareTrigger listing={l} seller={seller}/>
+            <ShareTrigger listing={l} seller={seller} messages={messages} setView={setView}/>
             </div>
             {l.billing === 'monthly' && !locked && (
               <div style={{ ...TY.small, color: T.text3, marginTop: 10, fontSize: 11, lineHeight: 1.4 }}>
@@ -2385,6 +2823,9 @@ function ListingDetailView({ state, setView, onQuick, focusId, library, purchase
 
 // ────────────── Store (legacy reward-only view, kept for compat) ──────────────
 function StoreView({ state, onQuick, focusId }) {
+  if (T.zodiac && window.ZodiacStoreView) {
+    return <window.ZodiacStoreView state={state} onQuick={onQuick} focusId={focusId}/>;
+  }
   const [cat, setCat] = React.useState('All');
   // When search navigated us here with a focusId, snap the category filter
   // back to "All" so the target is guaranteed to be visible.

@@ -57,7 +57,13 @@ const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export function avatarUrl(userId: string, hash: string | null, size = 128): string {
   if (!hash) {
     // Discord default avatar — (id >> 22) % 6 for the new username system.
-    const idx = Number((BigInt(userId) >> 22n) % 6n);
+    // Guard: only real Discord snowflakes are all-digits. Seeded/demo ids
+    // (e.g. `demo-seller-0001`) would blow up BigInt() with SyntaxError, so
+    // fall back to avatar 0 for any non-numeric id.
+    let idx = 0;
+    if (/^\d+$/.test(userId)) {
+      try { idx = Number((BigInt(userId) >> 22n) % 6n); } catch { idx = 0; }
+    }
     return `https://cdn.discordapp.com/embed/avatars/${idx}.png`;
   }
   const ext = hash.startsWith('a_') ? 'gif' : 'png';

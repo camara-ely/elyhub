@@ -18,6 +18,13 @@ import { listingRoutes } from './routes/listings';
 import { uploadRoutes } from './routes/uploads';
 import { downloadRoutes } from './routes/downloads';
 import { pairingRoutes } from './routes/pairing';
+import { userRoutes } from './routes/users';
+import { reviewRoutes } from './routes/reviews';
+import { adminRoutes } from './routes/admin';
+import { makerRoutes } from './routes/maker';
+import { messageRoutes } from './routes/messages';
+import { memberRoutes } from './routes/members';
+import { kassaCronTick } from './lib/kassa-cron';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -55,9 +62,17 @@ app.get('/healthz', (c) => c.json({ ok: true }));
 app.route('/auth', authRoutes);
 app.route('/me', meRoutes);
 app.route('/listings', listingRoutes);
+// Reviews share the /listings prefix — mounted separately so the route file
+// stays focused. Hono composes multiple .route() calls at the same prefix.
+app.route('/listings', reviewRoutes);
 app.route('/uploads', uploadRoutes);
 app.route('/downloads', downloadRoutes);
 app.route('/pairing', pairingRoutes);
+app.route('/users', userRoutes);
+app.route('/admin', adminRoutes);
+app.route('/maker', makerRoutes);
+app.route('/messages', messageRoutes);
+app.route('/members', memberRoutes);
 
 // Default 404 — keeps the JSON shape consistent across all paths.
 app.notFound((c) => c.json({ error: 'not_found', path: c.req.path }, 404));
@@ -70,4 +85,12 @@ app.onError((err, c) => {
   return c.json({ error: 'internal', detail: err.message }, 500);
 });
 
-export default app;
+// Workers expects a single default export. Hono exposes `fetch` directly
+// via the app; we wrap it here so we can ALSO export `scheduled` for the
+// cron trigger (kassa events drain + license issuance retry).
+export default {
+  fetch: app.fetch,
+  scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(kassaCronTick(env));
+  },
+};

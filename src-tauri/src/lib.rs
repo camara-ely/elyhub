@@ -140,6 +140,133 @@ async fn discord_oauth_listen() -> Result<String, String> {
     }
 }
 
+// Reveal a file in the OS file manager (Finder on macOS, Explorer on Windows).
+// On Linux there's no universal "select this file" — fall back to opening the
+// parent directory.
+#[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path))
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let parent = std::path::Path::new(&path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.clone());
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+// Open a path (file or directory) with the OS default handler. Used for
+// "Open Downloads folder" — pass the directory path.
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let prog = "open";
+    #[cfg(target_os = "linux")]
+    let prog = "xdg-open";
+
+    #[cfg(target_os = "windows")]
+    {
+        return std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new(prog)
+            .arg(&path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+// Native folder picker. Returns the chosen path, or None if the user cancels.
+// `default_path` (when provided) hints the dialog's starting directory.
+#[tauri::command]
+async fn pick_directory(default_path: Option<String>) -> Option<String> {
+    let mut d = rfd::AsyncFileDialog::new();
+    if let Some(p) = default_path {
+        if !p.is_empty() {
+            d = d.set_directory(p);
+        }
+    }
+    d.pick_folder().await.map(|h| h.path().to_string_lossy().to_string())
+}
+
+// Launch a separate `.app` bundle on macOS by name (e.g. "Hugin"). Falls back
+// to a path-based open elsewhere — caller passes the full path on Windows/Linux.
+// Returns the spawned process id (best-effort) or an error message.
+#[tauri::command]
+fn launch_app(name_or_path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        // `open -a Hugin` finds the app in /Applications, ~/Applications, or
+        // anywhere in Spotlight's app DB. If `name_or_path` looks like a path
+        // (starts with /), pass it through `-a` too — open accepts both.
+        std::process::Command::new("open")
+            .args(["-a", &name_or_path])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &name_or_path])
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new(&name_or_path)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+// Returns the OS user's Downloads directory (best-effort: $HOME/Downloads on
+// macOS/Linux, %USERPROFILE%\Downloads on Windows). Used as the assumed save
+// destination after the WebKit save dialog — we can't read the actual path
+// the user picked, but the default lands here in the common case.
+#[tauri::command]
+fn default_download_dir() -> String {
+    #[cfg(target_os = "windows")]
+    let home = std::env::var_os("USERPROFILE");
+    #[cfg(not(target_os = "windows"))]
+    let home = std::env::var_os("HOME");
+
+    if let Some(h) = home {
+        let mut p = std::path::PathBuf::from(h);
+        p.push("Downloads");
+        return p.to_string_lossy().to_string();
+    }
+    String::from(".")
+}
+
 // Opens a URL in the system's default browser. We roll our own instead of
 // depending on the JS shell plugin because the JS side here is plain <script>
 // tags (no bundler), and reaching into the plugin's invoke path is fiddlier
@@ -170,7 +297,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![discord_oauth_listen, open_url])
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            discord_oauth_listen,
+            open_url,
+            open_path,
+            reveal_in_finder,
+            default_download_dir,
+            pick_directory,
+            launch_app
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
