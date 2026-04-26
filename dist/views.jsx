@@ -802,8 +802,8 @@ function ZephyroView({ state, setView, library, purchaseListing }) {
             swapped in later by replacing the <span> with an <img>. */}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {[
-            { name: 'After Effects', meta: '2022 +' },
-            { name: 'Premiere Pro', meta: '2022 +' },
+            { name: 'After Effects', meta: 'native' },
+            { name: 'Premiere Pro', meta: 'native' },
             { name: 'macOS & Windows', meta: 'native' },
           ].map((h) => (
             <div key={h.name} style={{
