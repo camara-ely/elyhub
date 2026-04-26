@@ -14,6 +14,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write   # needed for tauri-action to create the GitHub Release
+
 jobs:
   # Gate the release on the same test suite CI runs. If tests are red on
   # the tagged commit, no release artifacts are built — cheaper to fail
