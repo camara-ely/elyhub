@@ -203,6 +203,12 @@
         try { localStorage.setItem(LS_KEY, JSON.stringify(current)); } catch {}
         notify();
       }
+      // Always push the latest profile to the backend so the users table
+      // stays current — name/avatar changes propagate to everyone's poll
+      // within one cycle without requiring a full sign-out/sign-in.
+      if (window.ElyAPI?.exchangeDiscord && current?.token) {
+        window.ElyAPI.exchangeDiscord(current.token).catch(() => {});
+      }
     } catch (err) {
       // Network error — leave cached record, try again next boot.
       console.warn('[auth] verify failed (keeping cached):', err.message);
@@ -211,6 +217,10 @@
 
   window.ElyAuth = { signIn, signOut, getCurrentUser, subscribe };
 
-  // Fire once a second after load so initial render isn't blocked on it.
-  if (current) setTimeout(verifyCurrentToken, 1000);
+  // Fire once after load + repeat every hour so profile changes on Discord
+  // (name, avatar) propagate automatically without requiring sign-out/sign-in.
+  if (current) {
+    setTimeout(verifyCurrentToken, 1000);
+    setInterval(verifyCurrentToken, 60 * 60 * 1000); // every 1 h
+  }
 })();
