@@ -1013,9 +1013,46 @@ function CreatorProfileView({ userId, state, setView, onQuick, reviews, wishlist
   if (T.zodiac && window.ZodiacCreatorProfileView) {
     return <window.ZodiacCreatorProfileView userId={userId} state={state} setView={setView} onQuick={onQuick} reviews={reviews} wishlist={wishlist} follows={follows} messages={messages} reports={reports} blocks={blocks}/>;
   }
-  const m = (window.MEMBERS || []).find((x) => x.id === userId);
+  // Try local MEMBERS first (populated from xp table). New members who signed in
+  // but haven't earned XP yet won't be there — fall back to /users/:id which
+  // queries the users table (created on first sign-in).
+  const fromMembers = (window.MEMBERS || []).find((x) => x.id === userId);
+  const [fetchedMember, setFetchedMember] = React.useState(null);
+  const [fetching, setFetching] = React.useState(false);
+  const [fetchFailed, setFetchFailed] = React.useState(false);
+  React.useEffect(() => {
+    if (fromMembers || fetching || fetchedMember || fetchFailed) return;
+    if (!userId) return;
+    setFetching(true);
+    window.ElyAPI?.get?.(`/users/${encodeURIComponent(userId)}`)
+      .then((u) => {
+        const built = {
+          id: u.id,
+          name: u.name || u.username || `User ${String(u.id).slice(-4)}`,
+          tag: u.username || String(u.id).slice(-4),
+          avatar: u.avatar_url || null,
+          aura: 0, level: 1, delta: 0, role: null, discordRoles: [],
+          voiceSeconds: 0, gymPosts: 0, gymStreakCurrent: 0, gymStreakBest: 0,
+        };
+        // Splice into MEMBERS so subsequent lookups (listings byline, etc.) resolve.
+        if (!Array.isArray(window.MEMBERS)) window.MEMBERS = [];
+        if (!window.MEMBERS.some((x) => x.id === built.id)) window.MEMBERS.push(built);
+        setFetchedMember(built);
+      })
+      .catch(() => setFetchFailed(true))
+      .finally(() => setFetching(false));
+  }, [userId, fromMembers, fetching, fetchedMember, fetchFailed]);
+  const m = fromMembers || fetchedMember;
   const [tab, setTab] = React.useState('listings');
   if (!m) {
+    if (fetching) {
+      return (
+        <Glass style={{ padding: 60, textAlign: 'center' }}>
+          <div style={{ width: 22, height: 22, border: '2px solid rgba(255,255,255,0.15)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 14px' }}/>
+          <div style={{ ...TY.small, color: T.text3 }}>Loading profile…</div>
+        </Glass>
+      );
+    }
     return (
       <Glass style={{ padding: 40, textAlign: 'center' }}>
         <div style={{ ...TY.body, color: T.text2 }}>Member not found.</div>
