@@ -322,6 +322,24 @@ function GiftModal({ state, onClose, onSend, initialFriend }) {
   const [err, setErr] = React.useState(null);
   const [search, setSearch] = React.useState('');
   const preset = [100, 500, 1000, 2500, 5000];
+  // Fresh member list fetched from /members when the modal opens — gets
+  // up-to-date Discord display names and avatar URLs for all guild members,
+  // not just the top-50 leaderboard snapshot kept in window.MEMBERS.
+  const [freshMembers, setFreshMembers] = React.useState(null);
+  React.useEffect(() => {
+    if (!window.ElyAPI?.isSignedIn?.()) return;
+    window.ElyAPI.get('/members?sort=name&limit=300')
+      .then((res) => {
+        const list = (res.items || []).map((r) => ({
+          id: r.id,
+          name: r.name || r.id,
+          tag: (r.name || r.id).toLowerCase().replace(/\s+/g, '').slice(0, 20),
+          avatar: r.avatar_url || null,
+        }));
+        setFreshMembers(list);
+      })
+      .catch(() => { /* fall back to MEMBERS below */ });
+  }, []);
 
   // Esc closes. Like RedeemModal, lock it while the op is mid-flight so a
   // stray keypress doesn't orphan a pending gift the user can't trace.
@@ -336,7 +354,10 @@ function GiftModal({ state, onClose, onSend, initialFriend }) {
   const normalize = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const q = normalize(search);
   const myId = window.ME?.id;
-  const candidates = MEMBERS
+  // Prefer the fresh /members list (all members, current Discord names/avatars).
+  // Fall back to MEMBERS global (top-50 poll) while fetch is in flight.
+  const memberPool = freshMembers || MEMBERS;
+  const candidates = memberPool
     .filter((m) => m.id !== myId)
     .filter((m) => !q || normalize(m.name).includes(q) || normalize(m.tag).includes(q));
 
@@ -393,7 +414,7 @@ function GiftModal({ state, onClose, onSend, initialFriend }) {
           {/* Filter — autofocuses so the user can start typing immediately.
               Hidden when there are fewer than 6 members, since scrolling isn't
               a problem yet and the extra chrome just adds noise. */}
-          {MEMBERS.length >= 6 && (
+          {memberPool.length >= 6 && (
             <input
               autoFocus
               value={search}
@@ -1684,8 +1705,8 @@ function ThemeTile({ config, label, active, onClick, accentColor, dim = false, l
         opacity: dim ? 0.85 : (locked ? 0.78 : 1),
       }}
     >
-      <div style={{ height: 64, position: 'relative', overflow: 'hidden', background: config?.base || '#0A0D1A' }}>
-        {config?.bgImage && (
+      <div style={{ height: 64, position: 'relative', overflow: 'hidden', background: isZodiac ? '#0A0805' : (config?.base || '#0A0D1A') }}>
+        {config?.bgImage && !isZodiac && (
           <div style={{
             position: 'absolute', inset: 0,
             backgroundImage: `url("${config.bgImage}")`,
@@ -1693,7 +1714,18 @@ function ThemeTile({ config, label, active, onClick, accentColor, dim = false, l
             opacity: typeof config.bgOpacity === 'number' ? config.bgOpacity : 0.9,
           }}/>
         )}
-        {pts.map((p, i) => (
+        {/* Zodiac tile: show the celestial starburst centered. Skip the
+            blurry orb points — they don't read well at 64 px. */}
+        {isZodiac ? (
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex',
+            alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+          }}>
+            {window.ZStarburst
+              ? React.createElement(window.ZStarburst, { size: 72, color: GOLD, sw: 0.5, points: 14 })
+              : <span style={{ color: GOLD, fontSize: 28, lineHeight: 1 }}>✦</span>}
+          </div>
+        ) : pts.map((p, i) => (
           <div key={i} style={{
             position: 'absolute',
             top: `${p.y}%`, left: `${p.x}%`,
@@ -1705,18 +1737,12 @@ function ThemeTile({ config, label, active, onClick, accentColor, dim = false, l
             transform: 'translate(-50%, -50%)',
           }}/>
         ))}
-        {/* Zodiac special: add a thin gold border + ✦ rune overlay so
-            the tile reads as "celestial" even at small size. */}
         {config?.unlock?.kassa && (
           <>
-            <div style={{
-              position: 'absolute', inset: 0, pointerEvents: 'none',
-              background: 'linear-gradient(135deg, rgba(201,162,78,0.18) 0%, transparent 60%)',
-            }}/>
             <span style={{
               position: 'absolute', top: 6, right: 8,
-              color: '#C9A24E', fontSize: 13, lineHeight: 1,
-              filter: 'drop-shadow(0 0 5px #C9A24E99)',
+              color: GOLD, fontSize: 11, lineHeight: 1,
+              filter: `drop-shadow(0 0 4px ${GOLD}99)`,
               pointerEvents: 'none',
             }}>✦</span>
           </>
