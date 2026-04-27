@@ -696,11 +696,7 @@ function ZodiacHomeView({ state, setState, setView, onQuick }) {
             {React.createElement(window.ZCorner, { pos: 'bl', color: Z.gold, size: 18, opacity: 0.85 })}
             {React.createElement(window.ZCorner, { pos: 'br', color: Z.gold, size: 18, opacity: 0.85 })}
           </>}
-          {window.ZStarburst && (
-            <div style={{ position: 'absolute', right: -40, top: -10, opacity: 0.55, pointerEvents: 'none' }}>
-              {React.createElement(window.ZStarburst, { size: 320, color: Z.gold, sw: 0.4, points: 16 })}
-            </div>
-          )}
+          {/* Starburst removed — user preference */}
           <div style={{ position: 'relative' }}>
             <div style={{ ...ZTY.capsSm, color: Z.gold, marginBottom: 6 }}>{today} · MOON ☽ WAXING</div>
             <div style={{ ...ZTY.capsSm, color: Z.text3, marginBottom: 16 }}>TODAY'S AURA</div>

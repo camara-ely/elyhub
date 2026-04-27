@@ -589,14 +589,15 @@
           tag: isPreview ? 'guest' : meRow.tag,
           avatar: isPreview ? null : meRow.avatar,
           aura: isPreview ? 0 : (() => {
-            // Net spendable = raw XP − marketplace purchases.
-            // meRow.aura is raw XP (matches bot leaderboard).
-            // meSnap.spend is the user's cumulative purchase total.
-            const sv = Math.max(0, (meRow.aura || 0) - (meSnap.spend || 0));
+            // Use raw XP so home, ranking, Members and the Discord bot all
+            // show the same number. Marketplace purchases live in a separate
+            // table and don't reduce xp.xp — only peer gifts do (the bot's
+            // transferXp is atomic and updates xp directly).
+            const sv = meRow.aura;
             const optAt   = window.__lastOptimisticAt;
             const optAura = window.__lastOptimisticAura;
             // Optimistic lock: if a debit is in flight (< 12 s) and the server
-            // still shows the old (higher) net balance, hold the optimistic floor
+            // still shows the old (higher) value, hold the optimistic floor
             // so the displayed balance doesn't flicker back up.
             if (optAt && typeof optAura === 'number' &&
                 (Date.now() - optAt) < 12_000 && sv > optAura) {

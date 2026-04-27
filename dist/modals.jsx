@@ -1661,15 +1661,25 @@ function ThemeCanvas({ resolved, updateCustom, selectedId, setSelectedId, editab
 function ThemeTile({ config, label, active, onClick, accentColor, dim = false, locked = false, lockHint }) {
   const pts = (config?.points || []).slice(0, 5);
   const glow = accentColor || config?.accentHi || config?.accent || T.accent;
+  // Zodiac gets a distinct "celestial premium" look: sharp corners + persistent
+  // gold border so it stands apart from every other tile at a glance.
+  const isZodiac = !!config?.unlock?.kassa;
+  const GOLD = '#C9A24E';
+  const radius = isZodiac ? 0 : T.r.md;
+  const border = isZodiac
+    ? (active ? `1.5px solid ${GOLD}` : `1px solid rgba(201,162,78,0.55)`)
+    : (active ? `1.5px solid ${glow}` : `0.5px solid ${T.glassBorder}`);
+  const shadow = isZodiac
+    ? (active ? `0 0 22px rgba(201,162,78,0.55), 0 0 6px rgba(201,162,78,0.3)` : `0 0 8px rgba(201,162,78,0.2)`)
+    : (active ? `0 0 20px ${glow}80` : 'none');
   return (
     <button
       onClick={onClick}
       title={locked ? (lockHint || `${label} — locked`) : label}
       style={{
-        padding: 0, borderRadius: T.r.md, cursor: 'pointer',
-        border: active ? `1.5px solid ${glow}` : `0.5px solid ${T.glassBorder}`,
-        background: 'transparent', overflow: 'hidden',
-        boxShadow: active ? `0 0 20px ${glow}80` : 'none',
+        padding: 0, borderRadius: radius, cursor: 'pointer',
+        border, background: 'transparent', overflow: 'hidden',
+        boxShadow: shadow,
         position: 'relative', display: 'flex', flexDirection: 'column',
         opacity: dim ? 0.85 : (locked ? 0.78 : 1),
       }}
