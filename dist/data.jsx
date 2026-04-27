@@ -613,12 +613,8 @@
           boosterClaimedToday: meRow.lastBoosterClaimDay === todayUtc,
         };
 
-        // Marketplace debit — server-computed. `meRow.aura` above is raw xp,
-        // so subtract the user's marketplace spend (returned in snap.me.spend)
-        // to get the live aura the topbar/home should show.
-        if (!isPreview && meRow.id && meSnap.spend > 0) {
-          newMe.aura = Math.max(0, newMe.aura - meSnap.spend);
-        }
+        // NOTE: meRow.aura is already net (xp − purchases) — the poll query
+        // does the LEFT JOIN deduction server-side. No client adjustment needed.
 
         // Mutate window.ME in place (same reasoning as MEMBERS above).
         if (window.ME && typeof window.ME === 'object') {
