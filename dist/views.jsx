@@ -1423,7 +1423,7 @@ function DiscoverView({ state, setView, wishlist, follows, recent, library, bloc
   return (
     <div style={{ padding: 24 }}>
       <div style={{ marginBottom: 20 }}>
-        <h1 style={{ ...TY.h1, margin: 0 }}>{t('nav.discover')}</h1>
+        <h1 style={{ ...TY.h1, margin: 0 }}>{t('nav.discover')}<span style={{ color: T.accentHi }}>.</span></h1>
         <div style={{ ...TY.small, color: T.text3, marginTop: 4 }}>
           {t('discover.sub')}
         </div>
@@ -1626,7 +1626,7 @@ function SavedView({ state, setView, wishlist }) {
     return (
       <div style={{ padding: 24 }}>
         <div style={{ marginBottom: 20 }}>
-          <h1 style={{ ...TY.h1, margin: 0 }}>{t('nav.saved')}</h1>
+          <h1 style={{ ...TY.h1, margin: 0 }}>{t('nav.saved')}<span style={{ color: T.accentHi }}>.</span></h1>
           <div style={{ ...TY.small, color: T.text3, marginTop: 4 }}>Listings you've hearted from the marketplace.</div>
         </div>
         <Glass style={{ padding: 48, textAlign: 'center' }}>
@@ -1655,7 +1655,7 @@ function SavedView({ state, setView, wishlist }) {
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ ...TY.h1, margin: 0 }}>{t('nav.saved')}</h1>
+          <h1 style={{ ...TY.h1, margin: 0 }}>{t('nav.saved')}<span style={{ color: T.accentHi }}>.</span></h1>
           <div style={{ ...TY.small, color: T.text3, marginTop: 4 }}>
             {items.length} {items.length === 1 ? 'listing' : 'listings'} · {affordable} within reach · {fmt(totalPrice)} aura total
           </div>
@@ -2414,7 +2414,7 @@ function FeedView({ state, setView, follows, wishlist }) {
     return (
       <div style={{ padding: 24 }}>
         <div style={{ marginBottom: 20 }}>
-          <h1 style={{ ...TY.h1, margin: 0 }}>Feed</h1>
+          <h1 style={{ ...TY.h1, margin: 0 }}>Feed<span style={{ color: T.accentHi }}>.</span></h1>
           <div style={{ ...TY.small, color: T.text3, marginTop: 4 }}>New listings from creators you follow.</div>
         </div>
         <Glass style={{ padding: 40, textAlign: 'center', marginBottom: 18 }}>
@@ -2474,7 +2474,7 @@ function FeedView({ state, setView, follows, wishlist }) {
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ ...TY.h1, margin: 0 }}>Feed</h1>
+          <h1 style={{ ...TY.h1, margin: 0 }}>Feed<span style={{ color: T.accentHi }}>.</span></h1>
           <div style={{ ...TY.small, color: T.text3, marginTop: 4 }}>
             {(() => {
               // Count distinct sellers actually represented in the feed
@@ -2992,7 +2992,7 @@ function MyLibraryView({ state, setView, library, purchaseListing }) {
       }}>← Marketplace</button>
 
       <div style={{ marginBottom: 22 }}>
-        <h1 style={{ ...TY.h1, margin: 0, color: T.textOnBg }}>My Library</h1>
+        <h1 style={{ ...TY.h1, margin: 0, color: T.textOnBg }}>My Library<span style={{ color: T.accentHi }}>.</span></h1>
         <div style={{ ...TY.body, color: T.textOnBg2, marginTop: 4 }}>
           Everything you've picked up from the marketplace.
         </div>

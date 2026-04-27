@@ -448,6 +448,40 @@ meRoutes.get('/poll', optionalAuth(), async (c: AppContext) => {
     hiddenIds,
   );
 
+  // 1b) If the caller is authenticated AND hidden from the leaderboard,
+  // fetch their own xp row separately so the client can still populate
+  // ME.aura / ME.level correctly — being hidden only affects what others
+  // see, not the owner's own home-screen data.
+  let selfRow: {
+    user_id: string; display_name: string | null; avatar_url: string | null;
+    xp: number; level: number; voice_seconds: number;
+    gym_posts: number; gym_streak_current: number; gym_streak_best: number;
+    last_daily_claim_day: string | null; last_booster_claim_day: string | null;
+    roles: string | null;
+  } | null = null;
+  if (uid && hiddenIds.includes(uid)) {
+    try {
+      selfRow = await queryOne(
+        client,
+        `SELECT x.user_id,
+                COALESCE(u.global_name, u.username, x.display_name) AS display_name,
+                COALESCE(
+                  CASE WHEN u.avatar_hash IS NOT NULL AND u.avatar_hash != ''
+                       THEN 'https://cdn.discordapp.com/avatars/' || u.id || '/' || u.avatar_hash || '.png?size=128'
+                       ELSE NULL END,
+                  x.avatar_url
+                ) AS avatar_url,
+                x.xp, x.level, x.voice_seconds,
+                x.gym_posts, x.gym_streak_current, x.gym_streak_best,
+                x.last_daily_claim_day, x.last_booster_claim_day, x.roles
+         FROM xp x
+         LEFT JOIN users u ON u.id = x.user_id
+         WHERE x.user_id = ?`,
+        [uid],
+      );
+    } catch { /* xp row may not exist yet */ }
+  }
+
   // 2) Marketplace spend — personal, only when authed.
   let spend = 0;
   if (uid) {
@@ -523,6 +557,9 @@ meRoutes.get('/poll', optionalAuth(), async (c: AppContext) => {
       totalGiftsReceived: Number(trophies.gifts_received) || 0,
       postjobCount:       Number(trophies.postjob_count)  || 0,
       founderRedeemed:    Number(trophies.founder_redeems || 0) > 0,
+      // Present only when the caller is hidden from the public leaderboard.
+      // The client uses this to populate ME.aura / ME.level when meIdx === -1.
+      selfRow: selfRow ?? undefined,
     },
     feed,
     server: serverMeta,
@@ -540,7 +577,8 @@ meRoutes.get('/leaderboard', optionalAuth(), async (c: AppContext) => {
     monthly: 30 * 86400,
   };
   const window = PERIODS[period] ?? PERIODS.weekly;
-  const since = now() - window;
+  // aura_log.at is stored in Unix seconds (bot convention: Math.floor(Date.now()/1000))
+  const since = Math.floor(Date.now() / 1000) - window;
 
   const lbHiddenIds = ((c.env.LEADERBOARD_HIDDEN_IDS || c.env.KASSA_OWNER_IDS || '')
     .split(',').map((s: string) => s.trim()).filter(Boolean));

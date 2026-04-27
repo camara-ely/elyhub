@@ -347,7 +347,7 @@ adminRoutes.post('/aura', async (c: AppContext) => {
         targetUserId,
         Math.abs(delta),
         note ?? (delta > 0 ? 'admin inject' : 'admin deduct'),
-        now(),
+        Math.floor(Date.now() / 1000), // seconds — matches bot convention in aura_log
       ],
     );
   } catch (err) {

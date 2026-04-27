@@ -44,7 +44,7 @@
   const Header = ({ title, subtitle, right }) => (
     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
       <div>
-        <h1 style={{ ...TY.h1, margin: 0 }}>{title}</h1>
+        <h1 style={{ ...TY.h1, margin: 0 }}>{title}<span style={{ color: T.accentHi }}>.</span></h1>
         {subtitle && <div style={{ ...TY.body, color: T.text2, marginTop: 6 }}>{subtitle}</div>}
       </div>
       {right}

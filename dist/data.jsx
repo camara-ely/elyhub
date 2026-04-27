@@ -497,20 +497,31 @@
           window.__lastRank = rank;
         }
 
-        // If the signed-in user isn't in the leaderboard yet (no XP), build the
-        // "me" row from the Discord profile so name/avatar still show.
+        // If the signed-in user isn't in the leaderboard (no XP yet, OR hidden
+        // from the public leaderboard), build the "me" row. Prefer selfRow from
+        // the poll (sent by the server when the caller is hidden) so their real
+        // aura/level/gym data is used instead of the zero-filled fallback.
+        const sr = meSnap?.selfRow; // only present when caller is leaderboard-hidden
         const meRow = authedUser && meIdx < 0
-          ? {
+          ? (sr ? {
+              id: String(sr.user_id),
+              name: sr.display_name || authedUser.globalName || authedUser.username,
+              tag: (sr.display_name || authedUser.username || '').toLowerCase().replace(/\s+/g,'').slice(0, 14),
+              avatar: sr.avatar_url || authedUser.avatarUrl,
+              aura: Number(sr.xp) || 0,
+              level: Number(sr.level) || 0,
+              gymPosts: Number(sr.gym_posts) || 0,
+              gymStreakCurrent: Number(sr.gym_streak_current) || 0,
+              gymStreakBest: Number(sr.gym_streak_best) || 0,
+              lastDailyClaimDay: sr.last_daily_claim_day || null,
+              lastBoosterClaimDay: sr.last_booster_claim_day || null,
+            } : {
               id: authedUser.id,
               name: authedUser.globalName || authedUser.username,
               tag: (authedUser.username || '').toLowerCase().slice(0, 14),
               avatar: authedUser.avatarUrl,
-              aura: 0,
-              level: 0,
-              gymPosts: 0,
-              gymStreakCurrent: 0,
-              gymStreakBest: 0,
-            }
+              aura: 0, level: 0, gymPosts: 0, gymStreakCurrent: 0, gymStreakBest: 0,
+            })
           : base;
 
         // Derive level + thresholds from total aura using the bot's exact MEE6
