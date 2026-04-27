@@ -2152,6 +2152,21 @@ function MembersView({ state, setView, messages }) {
 
   React.useEffect(() => { load(offset > 0); }, [load, offset]);
 
+  // Auth-retry: if MembersView mounts before the JWT auto-exchange completes,
+  // the first load() falls through to the unauthenticated MEMBERS fallback and
+  // sort=joined / sort=oldest won't work (no joined_at in local cache). Poll
+  // every 600 ms until isSignedIn() flips true, then re-run load from scratch.
+  React.useEffect(() => {
+    if (window.ElyAPI?.isSignedIn?.()) return; // already authed, no retry needed
+    const id = setInterval(() => {
+      if (window.ElyAPI?.isSignedIn?.()) {
+        clearInterval(id);
+        load(false);
+      }
+    }, 600);
+    return () => clearInterval(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Background refresh — picks up new joins / aura changes without
   // needing the user to reload. Suppress while typing.
   React.useEffect(() => {

@@ -259,6 +259,13 @@
     const me = window.ME;
     if (typeof patch.auraDelta === 'number' && patch.auraDelta !== 0) {
       me.aura = Math.max(0, (me.aura || 0) + patch.auraDelta);
+      // If we just debited (gift, redeem), stamp an optimistic lock so the
+      // poll can't restore the pre-debit balance while the bot is still
+      // processing. The lock expires after 12 s (bot finishes in ~5-10 s).
+      if (patch.auraDelta < 0) {
+        window.__lastOptimisticAt   = Date.now();
+        window.__lastOptimisticAura = me.aura;
+      }
       // Re-derive level / thresholds from the new aura. Same MEE6 formula as
       // the main fetch path — keeps the progress bar honest.
       const xpForLevel = (n) => 5 * n * n + 50 * n + 100;
@@ -577,7 +584,22 @@
           name: isPreview ? 'Guest' : meRow.name,
           tag: isPreview ? 'guest' : meRow.tag,
           avatar: isPreview ? null : meRow.avatar,
-          aura: isPreview ? 0 : meRow.aura,
+          aura: isPreview ? 0 : (() => {
+            const sv = meRow.aura; // server net (xp − purchases)
+            const optAt   = window.__lastOptimisticAt;
+            const optAura = window.__lastOptimisticAura;
+            // Optimistic lock: if a debit is in flight (< 12 s) and the server
+            // still shows the old (higher) balance, hold the optimistic floor
+            // so the displayed balance doesn't flicker back up.
+            if (optAt && typeof optAura === 'number' &&
+                (Date.now() - optAt) < 12_000 && sv > optAura) {
+              return optAura;
+            }
+            // Server has caught up or lock expired — accept server value.
+            window.__lastOptimisticAt   = null;
+            window.__lastOptimisticAura = null;
+            return sv;
+          })(),
           level: isPreview ? 0 : level,
           rank: isPreview ? null : rank,
           streak: isPreview ? 0 : meRow.gymStreakCurrent,
