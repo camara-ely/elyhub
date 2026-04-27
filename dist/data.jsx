@@ -265,19 +265,23 @@
       if (patch.auraDelta < 0) {
         window.__lastOptimisticAt   = Date.now();
         window.__lastOptimisticAura = me.aura;
+        // Spending aura never lowers your level — level is based on total XP
+        // earned, not on spendable balance. Skip the level recalculation here;
+        // the next poll will confirm the authoritative level from raw XP.
+      } else {
+        // Gaining aura (claim, gift received) — re-derive level/thresholds so
+        // the progress bar updates immediately on positive events.
+        const xpForLevel = (n) => 5 * n * n + 50 * n + 100;
+        let level = 0, need = xpForLevel(0), acc = 0;
+        while (me.aura >= acc + need) {
+          acc += need;
+          level++;
+          need = xpForLevel(level);
+        }
+        me.level = level;
+        me.prevLevelAura = acc;
+        me.nextLevelAura = acc + need;
       }
-      // Re-derive level / thresholds from the new aura. Same MEE6 formula as
-      // the main fetch path — keeps the progress bar honest.
-      const xpForLevel = (n) => 5 * n * n + 50 * n + 100;
-      let level = 0, need = xpForLevel(0), acc = 0;
-      while (me.aura >= acc + need) {
-        acc += need;
-        level++;
-        need = xpForLevel(level);
-      }
-      me.level = level;
-      me.prevLevelAura = acc;
-      me.nextLevelAura = acc + need;
     }
     if (patch.flags && typeof patch.flags === 'object') {
       Object.assign(me, patch.flags);
@@ -585,11 +589,14 @@
           tag: isPreview ? 'guest' : meRow.tag,
           avatar: isPreview ? null : meRow.avatar,
           aura: isPreview ? 0 : (() => {
-            const sv = meRow.aura; // server net (xp − purchases)
+            // Net spendable = raw XP − marketplace purchases.
+            // meRow.aura is raw XP (matches bot leaderboard).
+            // meSnap.spend is the user's cumulative purchase total.
+            const sv = Math.max(0, (meRow.aura || 0) - (meSnap.spend || 0));
             const optAt   = window.__lastOptimisticAt;
             const optAura = window.__lastOptimisticAura;
             // Optimistic lock: if a debit is in flight (< 12 s) and the server
-            // still shows the old (higher) balance, hold the optimistic floor
+            // still shows the old (higher) net balance, hold the optimistic floor
             // so the displayed balance doesn't flicker back up.
             if (optAt && typeof optAura === 'number' &&
                 (Date.now() - optAt) < 12_000 && sv > optAura) {
