@@ -410,6 +410,8 @@ meRoutes.get('/poll', optionalAuth(), async (c: AppContext) => {
   const client = db(c.env);
 
   // 1) Leaderboard (xp top 50) — public, no auth needed.
+  // Subtract marketplace purchases so every surface (home ranking, leaderboard,
+  // profile) shows the same net balance as ME.aura (getLiveBalance).
   const members = await queryAll<{
     user_id: string; display_name: string | null; avatar_url: string | null;
     xp: number; level: number; voice_seconds: number;
@@ -418,10 +420,17 @@ meRoutes.get('/poll', optionalAuth(), async (c: AppContext) => {
     roles: string | null;
   }>(
     client,
-    `SELECT user_id, display_name, avatar_url, xp, level, voice_seconds,
-            gym_posts, gym_streak_current, gym_streak_best,
-            last_daily_claim_day, last_booster_claim_day, roles
-     FROM xp ORDER BY xp DESC LIMIT 50`,
+    `SELECT x.user_id, x.display_name, x.avatar_url,
+            MAX(0, x.xp - COALESCE(p.spent, 0)) AS xp,
+            x.level, x.voice_seconds,
+            x.gym_posts, x.gym_streak_current, x.gym_streak_best,
+            x.last_daily_claim_day, x.last_booster_claim_day, x.roles
+     FROM xp x
+     LEFT JOIN (
+       SELECT user_id, SUM(aura_amount) AS spent
+       FROM purchases GROUP BY user_id
+     ) p ON p.user_id = x.user_id
+     ORDER BY xp DESC LIMIT 50`,
   );
 
   // 2) Marketplace spend — personal, only when authed.
