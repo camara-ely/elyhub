@@ -17,6 +17,7 @@
     gifts: true,
     drops: true,
     ranking: false, // opt-in — can get noisy on a busy leaderboard
+    messages: true,  // DM notifications — on by default
   };
 
   let prefs = { ...defaults };
@@ -181,7 +182,7 @@
 
     // kind: 'gift' | 'drop' | 'rank'
     dispatch({ kind, title, body }) {
-      const kindToPref = { gift: 'gifts', drop: 'drops', rank: 'ranking' };
+      const kindToPref = { gift: 'gifts', drop: 'drops', rank: 'ranking', message: 'messages' };
       const prefKey = kindToPref[kind];
       if (prefKey && !prefs[prefKey]) return;
 

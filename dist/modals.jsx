@@ -18,6 +18,11 @@
 
 // ────────────── Modals ──────────────
 function Modal({ children, onClose, width = 440 }) {
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return (
     <div onClick={onClose} role="dialog" aria-modal="true" style={{
       position: 'fixed', inset: 0, zIndex: 100,
@@ -163,7 +168,8 @@ function ReportModal({ target, reports, onClose }) {
             border: 'none', color: '#fff', cursor: sent ? 'default' : 'pointer',
             fontFamily: T.fontSans, fontSize: 13, fontWeight: 600,
             boxShadow: sent ? 'none' : '0 3px 14px rgba(220,90,90,0.45)',
-          }}>{sent ? 'Sent ✓' : 'Submit report'}</button>
+            opacity: sent ? 0.6 : 1,
+          }}>{sent ? 'Enviado ✓' : 'Enviar report'}</button>
         )}
       </div>
     </Modal>

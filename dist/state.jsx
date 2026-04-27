@@ -901,6 +901,26 @@ function useMessages() {
       const msgs = (res.messages || []).map((m) => mapServerMessage(m, meId, otherId));
       setThreads((prev) => {
         const t = prev[id] || buildEmpty(otherId);
+        // Detect truly new messages from the other person so we can notify.
+        const prevIds = new Set((t.messages || []).map((m) => m.id));
+        const newFromOther = msgs.filter((m) => m.fromId !== meId && !prevIds.has(m.id));
+        if (newFromOther.length > 0 && t._hydrated) {
+          // Only notify when the user isn't already looking at this thread.
+          const isActiveThread = activeOtherRef.current === otherId;
+          const tabHidden = typeof document !== 'undefined' && document.hidden;
+          if (!isActiveThread || tabHidden) {
+            const last = newFromOther[newFromOther.length - 1];
+            const senderName = (window.MEMBERS || []).find((m) => m.id === otherId)?.name || 'Someone';
+            const preview = last.text ? last.text.slice(0, 80) : '📷 Attachment';
+            try {
+              window.ElyNotify?.dispatch?.({
+                kind: 'message',
+                title: `💬 ${senderName}`,
+                body: preview,
+              });
+            } catch {}
+          }
+        }
         return {
           ...prev,
           [id]: {
@@ -943,22 +963,31 @@ function useMessages() {
         }
         return next;
       });
+      // Immediately hydrate threads with new unread so badge + content arrive together.
+      const newUnread = (res.items || [])
+        .filter((t) => (t.unread || 0) > 0 && t.other_user_id !== activeOtherRef.current)
+        .slice(0, 3);
+      for (const t of newUnread) loadThread(t.other_user_id);
     } catch (err) {
       console.warn('[messages] loadThreadList failed:', err.message);
     }
-  }, [meId]);
+  }, [meId, loadThread]);
 
   // Initial load + polling. Suppresses ticks when the tab is hidden so we
   // don't burn CF Workers requests on background tabs.
   React.useEffect(() => {
     loadThreadList();
-    const id = setInterval(() => {
+    // Thread list: lightweight summary poll every 8s.
+    const listId = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       loadThreadList();
-      // Also re-hydrate the active thread so incoming messages appear.
+    }, 8_000);
+    // Active thread: fast poll every 3s so incoming messages appear quickly.
+    const threadId = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       if (activeOtherRef.current) loadThread(activeOtherRef.current);
-    }, 10_000);
-    return () => clearInterval(id);
+    }, 3_000);
+    return () => { clearInterval(listId); clearInterval(threadId); };
   }, [loadThreadList, loadThread]);
 
   // Ensure a (possibly empty) thread row exists locally so the UI can
