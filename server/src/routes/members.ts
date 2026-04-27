@@ -63,6 +63,9 @@ memberRoutes.get('/', requireAuth(), async (c: AppContext) => {
       break;
   }
 
+  const hiddenIds = ((c.env.LEADERBOARD_HIDDEN_IDS || c.env.KASSA_OWNER_IDS || '')
+    .split(',').map((s: string) => s.trim()).filter(Boolean));
+
   const where: string[] = [];
   const args: (string | number)[] = [];
   if (search) {
@@ -71,6 +74,10 @@ memberRoutes.get('/', requireAuth(), async (c: AppContext) => {
     // has the up-to-date display name for a given member.
     where.push('(LOWER(COALESCE(u.global_name, u.username, x.display_name)) LIKE ? OR x.user_id LIKE ?)');
     args.push(`${search}%`, `${search}%`);
+  }
+  if (hiddenIds.length) {
+    where.push(`x.user_id NOT IN (${hiddenIds.map(() => '?').join(',')})`);
+    args.push(...hiddenIds);
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 

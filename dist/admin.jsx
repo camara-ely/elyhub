@@ -636,6 +636,153 @@
     );
   }
 
+  // ───────── Aura Tab — owner-only inject / deduct ────────────────────────
+
+  function AuraTab() {
+    const [members, setMembers]   = React.useState([]);
+    const [search, setSearch]     = React.useState('');
+    const [selected, setSelected] = React.useState(null); // { id, name, avatar_url, aura }
+    const [delta, setDelta]       = React.useState('');
+    const [note, setNote]         = React.useState('');
+    const [busy, setBusy]         = React.useState(false);
+    const [result, setResult]     = React.useState(null); // { ok, delta, name }
+
+    // Load full member list once on mount.
+    React.useEffect(() => {
+      api().get('/members?sort=name&limit=300')
+        .then((r) => setMembers(r.items || []))
+        .catch(() => {});
+    }, []);
+
+    const q = search.trim().toLowerCase();
+    const filtered = q
+      ? members.filter((m) => (m.name || '').toLowerCase().includes(q) || m.id.includes(q))
+      : members;
+
+    async function handleSubmit() {
+      const d = Number(delta);
+      if (!selected || !Number.isFinite(d) || d === 0) return;
+      setBusy(true);
+      setResult(null);
+      try {
+        const res = await api().post('/admin/aura', { userId: selected.id, delta: d, note: note || undefined });
+        if (res.ok) {
+          const dir = d > 0 ? `+${d.toLocaleString()}` : d.toLocaleString();
+          toast(`${dir} aura → ${selected.name}`, 'success');
+          setResult({ ok: true, delta: d, name: selected.name });
+          setDelta('');
+          setNote('');
+          setSelected(null);
+          setSearch('');
+        }
+      } catch (e) {
+        toast(e.message || 'Failed', 'error');
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    const deltaNum = Number(delta);
+    const valid = selected && Number.isFinite(deltaNum) && deltaNum !== 0;
+
+    return (
+      <Glass style={{ padding: 28, maxWidth: 560 }}>
+        <div style={{ ...TY.h3, marginBottom: 4 }}>Aura Adjustment</div>
+        <div style={{ ...TY.small, color: T.text3, marginBottom: 24 }}>
+          Positive = inject, negative = deduct. Logged to aura_log with kind=admin.
+        </div>
+
+        {/* Member picker */}
+        {!selected ? (
+          <div style={{ marginBottom: 20 }}>
+            <Field label="Member">
+              <Input value={search} onChange={setSearch} placeholder="Search by name or ID…" style={{ width: '100%', boxSizing: 'border-box' }}/>
+            </Field>
+            <div style={{ maxHeight: 220, overflowY: 'auto', marginTop: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {filtered.slice(0, 40).map((m) => (
+                <button key={m.id} onClick={() => { setSelected(m); setSearch(m.name); }}
+                  style={{
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    padding: '8px 10px', borderRadius: T.r.sm, display: 'flex',
+                    alignItems: 'center', gap: 10, color: T.text, textAlign: 'left',
+                  }}
+                  onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                  onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  {m.avatar_url
+                    ? <img src={m.avatar_url} style={{ width: 28, height: 28, borderRadius: '50%' }} alt=""/>
+                    : <div style={{ width: 28, height: 28, borderRadius: '50%', background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff', fontWeight: 700 }}>{(m.name||'?')[0].toUpperCase()}</div>}
+                  <div>
+                    <div style={{ ...TY.small, color: T.text, fontWeight: 500 }}>{m.name}</div>
+                    <div style={{ ...TY.micro, color: T.text3 }}>{m.aura?.toLocaleString()} aura · L{m.level}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, padding: '10px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: T.r.md }}>
+            {selected.avatar_url
+              ? <img src={selected.avatar_url} style={{ width: 32, height: 32, borderRadius: '50%' }} alt=""/>
+              : <div style={{ width: 32, height: 32, borderRadius: '50%', background: T.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#fff', fontWeight: 700 }}>{(selected.name||'?')[0].toUpperCase()}</div>}
+            <div style={{ flex: 1 }}>
+              <div style={{ ...TY.body, fontWeight: 500 }}>{selected.name}</div>
+              <div style={{ ...TY.micro, color: T.text3 }}>{selected.aura?.toLocaleString()} aura · L{selected.level}</div>
+            </div>
+            <button onClick={() => { setSelected(null); setSearch(''); setDelta(''); setNote(''); }}
+              style={{ background: 'transparent', border: 'none', color: T.text3, cursor: 'pointer', fontSize: 18 }}>×</button>
+          </div>
+        )}
+
+        {/* Amount + note */}
+        <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+          <Field label="Delta (+ inject  /  − deduct)" style={{ flex: 1 }}>
+            <Input type="number" value={delta} onChange={setDelta} placeholder="e.g. 5000 or -2000" style={{ width: '100%', boxSizing: 'border-box' }}/>
+          </Field>
+        </div>
+        <Field label="Note (optional)">
+          <Input value={note} onChange={setNote} placeholder="Reason…" style={{ width: '100%', boxSizing: 'border-box', marginBottom: 20 }}/>
+        </Field>
+
+        {/* Preview */}
+        {valid && (
+          <div style={{
+            padding: '10px 14px', borderRadius: T.r.md, marginBottom: 16,
+            background: deltaNum > 0 ? 'rgba(74,222,128,0.08)' : 'rgba(239,68,68,0.08)',
+            border: `0.5px solid ${deltaNum > 0 ? 'rgba(74,222,128,0.25)' : 'rgba(239,68,68,0.25)'}`,
+            ...TY.small, color: deltaNum > 0 ? '#4ade80' : '#f87171',
+          }}>
+            {deltaNum > 0 ? '+' : ''}{deltaNum.toLocaleString()} aura → {selected?.name}
+            {selected && typeof selected.aura === 'number' && (
+              <span style={{ color: T.text3 }}>
+                {' '}(new balance: ~{Math.max(0, selected.aura + deltaNum).toLocaleString()})
+              </span>
+            )}
+          </div>
+        )}
+
+        <button
+          disabled={!valid || busy}
+          onClick={handleSubmit}
+          style={{
+            width: '100%', height: 40, borderRadius: T.r.md, border: 'none',
+            background: valid ? `linear-gradient(135deg, ${T.accentHi}, ${T.accent})` : 'rgba(255,255,255,0.06)',
+            color: valid ? '#fff' : T.text3, fontFamily: T.fontSans, fontWeight: 600,
+            fontSize: 14, cursor: valid ? 'pointer' : 'not-allowed', opacity: busy ? 0.6 : 1,
+          }}
+        >
+          {busy ? 'Sending…' : 'Apply'}
+        </button>
+
+        {result?.ok && (
+          <div style={{ marginTop: 14, ...TY.small, color: '#4ade80', textAlign: 'center' }}>
+            ✓ {result.delta > 0 ? '+' : ''}{result.delta.toLocaleString()} applied to {result.name}
+          </div>
+        )}
+      </Glass>
+    );
+  }
+
   // ───────── Main AdminView ───────────────────────────────────────────────
 
   function AdminView() {
@@ -672,6 +819,7 @@
                 { value: 'licenses', label: 'Licenses' },
                 { value: 'clients',  label: 'Clients' },
                 { value: 'grant',    label: 'Grant' },
+                ...(role === 'owner' ? [{ value: 'aura', label: 'Aura ✦' }] : []),
               ]}
             />
           }
@@ -679,6 +827,7 @@
         {tab === 'licenses' && <LicensesTab role={role}/>}
         {tab === 'clients'  && <ClientsTab role={role}/>}
         {tab === 'grant'    && <GrantTab role={role}/>}
+        {tab === 'aura'     && role === 'owner' && <AuraTab/>}
       </div>
     );
   }

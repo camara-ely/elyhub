@@ -16,7 +16,7 @@
 import { Hono } from 'hono';
 import type { AppContext, Env } from '../types';
 import { requireAuth, userId } from '../auth';
-import { db, exec, queryOne } from '../db';
+import { db, exec, now, queryOne } from '../db';
 import {
   resolveRole,
   adminGrantLicense,
@@ -310,6 +310,52 @@ adminRoutes.post('/listings/:id/kassa', async (c: AppContext) => {
     [pid, tier, Date.now(), lid],
   );
   return c.json({ ok: true, listing_id: lid, kassa_product_id: pid, kassa_tier: tier });
+});
+
+// ───────── Aura inject / deduct ─────────────────────────────────────────────
+
+// POST /admin/aura — owner-only aura injection or deduction.
+// Body: { userId: string, delta: number, note?: string }
+// delta > 0: inject. delta < 0: deduct. delta === 0: error.
+adminRoutes.post('/aura', async (c: AppContext) => {
+  const actor = await requireAdminActor(c);
+  if (actor instanceof Response) return actor;
+  if (actor.role !== 'owner') return c.json({ error: 'forbidden' }, 403);
+
+  const body = (await safeBody(c)) as { userId?: unknown; delta?: unknown; note?: unknown };
+  const targetUserId = body.userId ? String(body.userId).trim() : '';
+  const delta = Number(body.delta);
+  const note = body.note ? String(body.note).slice(0, 280) : null;
+
+  if (!targetUserId) return c.json({ error: 'userId_required' }, 400);
+  if (!Number.isFinite(delta) || delta === 0) return c.json({ error: 'delta_must_be_nonzero' }, 400);
+
+  const client = db(c.env);
+  try {
+    await exec(
+      client,
+      'UPDATE xp SET xp = MAX(0, xp + ?) WHERE user_id = ?',
+      [delta, targetUserId],
+    );
+    await exec(
+      client,
+      `INSERT INTO aura_log (kind, from_user_id, to_user_id, amount, note, at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        'admin',
+        actor.id,
+        targetUserId,
+        Math.abs(delta),
+        note ?? (delta > 0 ? 'admin inject' : 'admin deduct'),
+        now(),
+      ],
+    );
+  } catch (err) {
+    console.error('[admin/aura] failed:', (err as Error).message);
+    return c.json({ error: 'aura_op_failed' }, 500);
+  }
+
+  return c.json({ ok: true, delta, userId: targetUserId });
 });
 
 // ───────── Helpers ──────────────────────────────────────────────────────────

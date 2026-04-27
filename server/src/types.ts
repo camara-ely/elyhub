@@ -18,6 +18,7 @@ export interface Env {
   KC_SUPABASE_URL: string;        // https://<project>.supabase.co — Kassa license API
   KASSA_OWNER_IDS?: string;       // comma-separated Discord ids with owner admin tier
   MAKER_MOD_ROLE_ID?: string;     // Discord role id for maker-mod (admin tier)
+  LEADERBOARD_HIDDEN_IDS?: string;   // comma-separated Discord ids hidden from public leaderboards
 
   // Secrets (wrangler secret put ...)
   DISCORD_CLIENT_SECRET: string;

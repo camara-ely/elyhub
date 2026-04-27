@@ -876,20 +876,48 @@ function LeaderboardView({ state, focusId, onQuick }) {
     return <window.ZodiacLeaderboardView state={state} focusId={focusId} onQuick={onQuick}/>;
   }
   useFocusHighlight(focusId);
-  // Only categories we actually have data for: Overall (total xp) and Gym
-  // (gym_posts). Deals and Voice were fake multipliers before — ripped them
-  // out instead of lying. Time window removed for the same reason: we don't
-  // log per-day XP history, only current totals.
+
+  // category: overall | gym | daily | weekly | monthly
   const [category, setCategory] = React.useState('overall');
-  const metricKey = category === 'gym' ? 'gymPosts' : 'aura';
-  const metricLabel = category === 'gym' ? 'posts' : 'aura';
+
+  // Period leaderboard state — populated by /me/leaderboard?period=X
+  const [periodData, setPeriodData]   = React.useState({});   // { daily: [], weekly: [], monthly: [] }
+  const [periodLoading, setPeriodLoading] = React.useState(false);
+
+  const isPeriod = category === 'daily' || category === 'weekly' || category === 'monthly';
+
+  React.useEffect(() => {
+    if (!isPeriod) return;
+    if (periodData[category]) return; // already fetched
+    setPeriodLoading(true);
+    window.ElyAPI?.get(`/me/leaderboard?period=${category}`)
+      .then((res) => {
+        setPeriodData((prev) => ({ ...prev, [category]: res.items || [] }));
+      })
+      .catch(() => {
+        setPeriodData((prev) => ({ ...prev, [category]: [] }));
+      })
+      .finally(() => setPeriodLoading(false));
+  }, [category, isPeriod]);
+
+  const metricKey   = category === 'gym' ? 'gymPosts' : 'aura';
+  const metricLabel = category === 'gym' ? 'posts'    : 'aura';
+
+  // For period tabs the data comes from the API; for overall/gym from MEMBERS.
   const ordered = React.useMemo(() => {
+    if (isPeriod) {
+      return (periodData[category] || []).map((r) => ({
+        id: r.id, name: r.name, avatar: r.avatar_url, level: r.level,
+        aura: r.gained, tag: (r.name || r.id).toLowerCase().replace(/\s+/g,'').slice(0,16),
+        delta: 0,
+      }));
+    }
     const list = [...MEMBERS];
     list.sort((a, b) => (b[metricKey] || 0) - (a[metricKey] || 0));
-    // For Gym, only show people who've actually posted — otherwise a tail of
-    // zeros dominates the board.
     return category === 'gym' ? list.filter((u) => (u.gymPosts || 0) > 0) : list;
-  }, [category, metricKey]);
+  }, [category, isPeriod, periodData, metricKey]);
+
+  const periodLabel = { daily: 'Today', weekly: 'This week', monthly: 'This month' };
 
   return (
     <div>
@@ -897,81 +925,86 @@ function LeaderboardView({ state, focusId, onQuick }) {
         <div>
           <div style={{ ...TY.micro, color: T.text3, marginBottom: 10 }}>{t('lb.ranking')}</div>
           <h1 style={{ ...TY.h1, margin: 0 }}>{t('lb.title')}<span style={{ color: T.accentHi }}>.</span></h1>
+          {isPeriod && (
+            <div style={{ ...TY.small, color: T.text3, marginTop: 6 }}>
+              Aura gained · {periodLabel[category]}
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* "Jump to you" — only surfaces when you're off the initial fold
-              (below top 3 card grid, so rank >= 4) so there's actual scrolling
-              value. Clicking scrolls the row into view and triggers the pulse
-              via the same data-focus-id selector the search uses. */}
-          <JumpToMeButton members={ordered}/>
+          {!isPeriod && <JumpToMeButton members={ordered}/>}
           <Segmented value={category} onChange={setCategory} options={[
-            { value: 'overall', label: t('lb.overall') }, { value: 'gym', label: t('lb.gym') },
+            { value: 'overall', label: t('lb.overall') },
+            { value: 'gym',     label: t('lb.gym') },
+            { value: 'daily',   label: 'Daily' },
+            { value: 'weekly',  label: 'Weekly' },
+            { value: 'monthly', label: 'Monthly' },
           ]}/>
         </div>
       </div>
 
-      {ordered.length === 0 && (
+      {(isPeriod && periodLoading) && (
+        <Glass style={{ padding: '60px 24px', textAlign: 'center' }}>
+          <div style={{ ...TY.small, color: T.text3 }}>Loading…</div>
+        </Glass>
+      )}
+
+      {!periodLoading && ordered.length === 0 && (
         <Glass style={{ padding: '60px 24px', textAlign: 'center' }}>
           <div style={{ ...TY.body, color: T.text2 }}>
-            {category === 'gym' ? t('lb.emptyGym') : t('lb.empty')}
+            {category === 'gym' ? t('lb.emptyGym') : (isPeriod ? 'No aura activity in this period yet.' : t('lb.empty'))}
           </div>
           <div style={{ ...TY.small, color: T.text3, marginTop: 6 }}>
-            {category === 'gym' ? t('lb.emptyGymSub') : t('lb.emptySub')}
+            {category === 'gym' ? t('lb.emptyGymSub') : (isPeriod ? 'Check back after some activity.' : t('lb.emptySub'))}
           </div>
         </Glass>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 24 }}>
-        {ordered.slice(0,3).map((u, i) => {
-          const medal = ['#FFB84D', '#D0D5DB', '#C77D4D'][i];
-          return (
-            <Glass key={u.id} data-focus-id={u.id} style={{
-              padding: 22, position: 'relative', overflow: 'hidden',
-              transform: i === 0 ? 'translateY(-6px)' : 'none',
-              borderColor: i === 0 ? `${T.accent}55` : T.glassBorder,
-            }}>
-              {/* All three podium cards get a hover-tracking orb so the row
-                  feels interactive as a unit. #1 uses the accent hue; #2/#3
-                  use the medal hue so each card has its own identity. */}
-              <HoverOrbs
-                restX={80} restY={20}
-                size={i === 0 ? 360 : 260}
-                color={i === 0 ? T.accent : medal}
-                colorHi={i === 0 ? T.accentHi : medal}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, position: 'relative' }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: '50%',
-                  background: medal, color: '#1a1a1a',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontFamily: T.fontMono, fontSize: 12, fontWeight: 600,
-                  boxShadow: `inset 0 1px 0 rgba(255,255,255,0.3), 0 0 12px ${medal}55`,
-                }}>{i+1}</div>
-                <Delta value={u.delta}/>
-              </div>
-              <Avatar name={u.name} src={u.avatar} size={56} ring={i === 0}/>
-              <div style={{ ...TY.h3, margin: '14px 0 4px', position: 'relative' }}>{u.name}</div>
-              <div style={{ ...TY.small, color: T.text3, marginBottom: 16 }}>@{u.tag} · L{u.level}</div>
-              <div style={{ ...TY.numMed, color: i === 0 ? T.accentHi : T.text, fontSize: 26, position: 'relative' }}>{fmt(u[metricKey] || 0)}</div>
-              <div style={{ ...TY.small, color: T.text3 }}>{metricLabel}</div>
-            </Glass>
-          );
-        })}
-      </div>
+      {!periodLoading && ordered.length > 0 && (<>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 24 }}>
+          {ordered.slice(0,3).map((u, i) => {
+            const medal = ['#FFB84D', '#D0D5DB', '#C77D4D'][i];
+            return (
+              <Glass key={u.id} data-focus-id={u.id} style={{
+                padding: 22, position: 'relative', overflow: 'hidden',
+                transform: i === 0 ? 'translateY(-6px)' : 'none',
+                borderColor: i === 0 ? `${T.accent}55` : T.glassBorder,
+              }}>
+                <HoverOrbs restX={80} restY={20} size={i === 0 ? 360 : 260}
+                  color={i === 0 ? T.accent : medal} colorHi={i === 0 ? T.accentHi : medal}/>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, position: 'relative' }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%',
+                    background: medal, color: '#1a1a1a',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontFamily: T.fontMono, fontSize: 12, fontWeight: 600,
+                    boxShadow: `inset 0 1px 0 rgba(255,255,255,0.3), 0 0 12px ${medal}55`,
+                  }}>{i+1}</div>
+                  {!isPeriod && <Delta value={u.delta}/>}
+                </div>
+                <Avatar name={u.name} src={u.avatar} size={56} ring={i === 0}/>
+                <div style={{ ...TY.h3, margin: '14px 0 4px', position: 'relative' }}>{u.name}</div>
+                <div style={{ ...TY.small, color: T.text3, marginBottom: 16 }}>@{u.tag} · L{u.level}</div>
+                <div style={{ ...TY.numMed, color: i === 0 ? T.accentHi : T.text, fontSize: 26, position: 'relative' }}>
+                  {isPeriod ? '+' : ''}{fmt(u[metricKey] || u.aura || 0)}
+                </div>
+                <div style={{ ...TY.small, color: T.text3 }}>{isPeriod ? 'gained' : metricLabel}</div>
+              </Glass>
+            );
+          })}
+        </div>
 
-      <Glass style={{ padding: 6, overflow: 'hidden' }}>
-        {ordered.slice(3).map((u, i) => (
-          <RankRow
-            key={u.id}
-            rank={i+4}
-            user={u}
-            isMe={u.id === (window.ME?.id)}
-            metricKey={metricKey}
-            metricLabel={metricLabel}
-            onGift={onQuick?.gift}
-          />
-        ))}
-      </Glass>
+        <Glass style={{ padding: 6, overflow: 'hidden' }}>
+          {ordered.slice(3).map((u, i) => (
+            <RankRow key={u.id} rank={i+4} user={u}
+              isMe={u.id === (window.ME?.id)}
+              metricKey={isPeriod ? 'aura' : metricKey}
+              metricLabel={isPeriod ? 'gained' : metricLabel}
+              onGift={isPeriod ? null : onQuick?.gift}
+            />
+          ))}
+        </Glass>
+      </>)}
     </div>
   );
 }

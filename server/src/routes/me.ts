@@ -413,6 +413,12 @@ meRoutes.get('/poll', optionalAuth(), async (c: AppContext) => {
   // Use raw xp so the app leaderboard ranks match the Discord bot's /leaderboard
   // command. ME.aura (spendable balance) is separately computed via getLiveBalance
   // (which subtracts purchases) and shown only on the home screen.
+  const hiddenIds = ((c.env.LEADERBOARD_HIDDEN_IDS || c.env.KASSA_OWNER_IDS || '')
+    .split(',').map((s: string) => s.trim()).filter(Boolean));
+  const hiddenSql = hiddenIds.length
+    ? `WHERE x.user_id NOT IN (${hiddenIds.map(() => '?').join(',')})`
+    : '';
+
   const members = await queryAll<{
     user_id: string; display_name: string | null; avatar_url: string | null;
     xp: number; level: number; voice_seconds: number;
@@ -437,7 +443,9 @@ meRoutes.get('/poll', optionalAuth(), async (c: AppContext) => {
             x.last_daily_claim_day, x.last_booster_claim_day, x.roles
      FROM xp x
      LEFT JOIN users u ON u.id = x.user_id
+     ${hiddenSql}
      ORDER BY x.xp DESC LIMIT 50`,
+    hiddenIds,
   );
 
   // 2) Marketplace spend — personal, only when authed.
@@ -518,6 +526,68 @@ meRoutes.get('/poll', optionalAuth(), async (c: AppContext) => {
     },
     feed,
     server: serverMeta,
+  });
+});
+
+// ──── GET /me/leaderboard ────
+// Period leaderboard: ranks members by aura gained within a rolling window.
+// Public (no auth required). period = daily | weekly | monthly.
+meRoutes.get('/leaderboard', optionalAuth(), async (c: AppContext) => {
+  const period = (new URL(c.req.url).searchParams.get('period') || 'weekly').toLowerCase();
+  const PERIODS: Record<string, number> = {
+    daily:   86400,
+    weekly:  7 * 86400,
+    monthly: 30 * 86400,
+  };
+  const window = PERIODS[period] ?? PERIODS.weekly;
+  const since = now() - window;
+
+  const lbHiddenIds = ((c.env.LEADERBOARD_HIDDEN_IDS || c.env.KASSA_OWNER_IDS || '')
+    .split(',').map((s: string) => s.trim()).filter(Boolean));
+  const lbHiddenSql = lbHiddenIds.length
+    ? `AND al.to_user_id NOT IN (${lbHiddenIds.map(() => '?').join(',')})`
+    : '';
+
+  const client = db(c.env);
+  const rows = await queryAll<{
+    user_id: string;
+    display_name: string | null;
+    avatar_url: string | null;
+    gained: number;
+    level: number;
+  }>(
+    client,
+    `SELECT al.to_user_id AS user_id,
+            COALESCE(u.global_name, u.username, x.display_name, al.to_user_id) AS display_name,
+            COALESCE(
+              CASE WHEN u.avatar_hash IS NOT NULL AND u.avatar_hash != ''
+                   THEN 'https://cdn.discordapp.com/avatars/' || u.id || '/' || u.avatar_hash || '.png?size=128'
+                   ELSE NULL END,
+              x.avatar_url
+            ) AS avatar_url,
+            SUM(al.amount) AS gained,
+            COALESCE(x.level, 0) AS level
+     FROM aura_log al
+     LEFT JOIN xp x ON x.user_id = al.to_user_id
+     LEFT JOIN users u ON u.id = al.to_user_id
+     WHERE al.at >= ?
+       AND al.kind NOT IN ('redeem', 'purchase', 'refund')
+       ${lbHiddenSql}
+     GROUP BY al.to_user_id
+     ORDER BY gained DESC
+     LIMIT 20`,
+    [since, ...lbHiddenIds],
+  );
+
+  return c.json({
+    period,
+    items: rows.map((r) => ({
+      id: r.user_id,
+      name: r.display_name || r.user_id,
+      avatar_url: r.avatar_url,
+      gained: Number(r.gained),
+      level: Number(r.level),
+    })),
   });
 });
 

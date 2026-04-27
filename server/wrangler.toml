@@ -26,6 +26,7 @@ R2_PUBLIC_BASE = ""             # e.g. https://pub-xxxx.r2.dev (optional — for
 KC_SUPABASE_URL = "https://uhpbybovzcnlwuglsvtn.supabase.co"
 KASSA_OWNER_IDS = "264327419027128320,462672954585776131"
 MAKER_MOD_ROLE_ID = "1497059171122810910"
+LEADERBOARD_HIDDEN_IDS = ""
 
 # Scheduled Worker — drains Supabase marketplace_events_queue into Turso's
 # marketplace_events (bot reads from there), and retries pending rows in
@@ -46,6 +47,7 @@ R2_PUBLIC_BASE = ""
 KC_SUPABASE_URL = "https://uhpbybovzcnlwuglsvtn.supabase.co"
 KASSA_OWNER_IDS = "264327419027128320,462672954585776131"
 MAKER_MOD_ROLE_ID = "1497059171122810910"
+LEADERBOARD_HIDDEN_IDS = ""
 
 [env.production.triggers]
 crons = ["*/1 * * * *"]
