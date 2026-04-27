@@ -1423,9 +1423,9 @@ function DiscoverView({ state, setView, wishlist, follows, recent, library, bloc
   return (
     <div style={{ padding: 24 }}>
       <div style={{ marginBottom: 20 }}>
-        <h1 style={{ ...TY.h1, margin: 0 }}>For you</h1>
+        <h1 style={{ ...TY.h1, margin: 0 }}>{t('nav.discover')}</h1>
         <div style={{ ...TY.small, color: T.text3, marginTop: 4 }}>
-          Picks blended from what you've saved, followed, and browsed.
+          {t('discover.sub')}
         </div>
       </div>
 
@@ -1626,7 +1626,7 @@ function SavedView({ state, setView, wishlist }) {
     return (
       <div style={{ padding: 24 }}>
         <div style={{ marginBottom: 20 }}>
-          <h1 style={{ ...TY.h1, margin: 0 }}>Saved</h1>
+          <h1 style={{ ...TY.h1, margin: 0 }}>{t('nav.saved')}</h1>
           <div style={{ ...TY.small, color: T.text3, marginTop: 4 }}>Listings you've hearted from the marketplace.</div>
         </div>
         <Glass style={{ padding: 48, textAlign: 'center' }}>
@@ -1655,7 +1655,7 @@ function SavedView({ state, setView, wishlist }) {
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ ...TY.h1, margin: 0 }}>Saved</h1>
+          <h1 style={{ ...TY.h1, margin: 0 }}>{t('nav.saved')}</h1>
           <div style={{ ...TY.small, color: T.text3, marginTop: 4 }}>
             {items.length} {items.length === 1 ? 'listing' : 'listings'} · {affordable} within reach · {fmt(totalPrice)} aura total
           </div>
@@ -1830,7 +1830,7 @@ function MessagesView({ state, setView, messages, threadId, blocks, reports }) {
     <div>
       <div style={{ marginBottom: 20 }}>
         <div style={{ ...TY.micro, color: T.textOnBg3, marginBottom: 8 }}>INBOX</div>
-        <h1 style={{ ...TY.h1, margin: 0, color: T.textOnBg }}>Messages<span style={{ color: T.accentHi }}>.</span></h1>
+        <h1 style={{ ...TY.h1, margin: 0, color: T.textOnBg }}>{t('nav.messages')}<span style={{ color: T.accentHi }}>.</span></h1>
       </div>
 
       {list.length === 0 ? (
@@ -2188,7 +2188,7 @@ function MembersView({ state, setView, messages }) {
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
         <div>
           <div style={{ ...TY.micro, color: T.text3, marginBottom: 8 }}>COMMUNITY</div>
-          <h1 style={{ ...TY.h1, margin: 0 }}>Members<span style={{ color: T.accentHi }}>.</span></h1>
+          <h1 style={{ ...TY.h1, margin: 0 }}>{t('nav.members')}<span style={{ color: T.accentHi }}>.</span></h1>
           <div style={{ ...TY.small, color: T.text3, marginTop: 6 }}>
             {total > 0 ? `${total.toLocaleString()} ${total === 1 ? 'member' : 'members'}` : 'Discord guild directory'}
             {loading && offset === 0 ? ' · refreshing…' : ''}

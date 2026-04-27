@@ -136,7 +136,7 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
     { id: 'feed',        label: t('nav.feed'),        icon: <IFeed/>, newPip: feedNewCount },
     // Members — Discord guild directory backed by /members. Always shown;
     // bot keeps the list synced via gateway events.
-    { id: 'members',     label: 'Members',            icon: (
+    { id: 'members',     label: t('nav.members'),      icon: (
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
         <circle cx="9" cy="7" r="4"/>
@@ -789,12 +789,11 @@ function SearchBar({ setView, onQuick }) {
         }}>
           <div style={{ ...TY.micro, color: T.text3, padding: '4px 8px 8px' }}>Jump to</div>
           {[
-            { label: 'Marketplace',  sub: 'Browse all listings',            kind: 'nav', view: { id: 'store' },       color: T.accent  },
-            { label: 'Feed',         sub: 'New from creators you follow',   kind: 'nav', view: { id: 'feed' },        color: T.accentHi },
-            { label: 'Saved',        sub: 'Your wishlist',                  kind: 'nav', view: { id: 'saved' },       color: '#ff6b8f'  },
-            { label: 'Library',      sub: 'Things you own or subscribe to', kind: 'nav', view: { id: 'library' },     color: T.green   },
-            { label: 'Leaderboard',  sub: 'Top members this week',          kind: 'nav', view: { id: 'leaderboard' }, color: T.accentHi },
-            { label: 'Trophies',     sub: 'Your unlocks and progress',      kind: 'nav', view: { id: 'trophies' },    color: T.green    },
+            { label: t('nav.store'),       sub: t('spot.storeSub'),     kind: 'nav', view: { id: 'store' },       color: T.accent  },
+            { label: t('nav.feed'),        sub: t('spot.feedSub'),      kind: 'nav', view: { id: 'feed' },        color: T.accentHi },
+            { label: t('nav.saved'),       sub: t('spot.savedSub'),     kind: 'nav', view: { id: 'saved' },       color: '#ff6b8f'  },
+            { label: t('nav.leaderboard'), sub: t('spot.lbSub'),        kind: 'nav', view: { id: 'leaderboard' }, color: T.accentHi },
+            { label: t('nav.trophies'),    sub: t('spot.trophiesSub'),  kind: 'nav', view: { id: 'trophies' },    color: T.green    },
           ].map((s) => (
             <button
               key={s.label}

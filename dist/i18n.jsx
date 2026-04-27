@@ -27,11 +27,21 @@
     'nav.zephyro':     { en: 'Hugin',        pt: 'Hugin' },
     'nav.saved':       { en: 'Saved',        pt: 'Salvos' },
     'nav.feed':        { en: 'Feed',         pt: 'Novidades' },
+    'nav.members':     { en: 'Members',      pt: 'Membros' },
     'nav.messages':    { en: 'Messages',     pt: 'Mensagens' },
     'nav.trophies':    { en: 'Trophies',     pt: 'Troféus' },
     'nav.licenses':    { en: 'My Licenses',  pt: 'Minhas Licenças' },
     'nav.maker':       { en: 'Maker Studio', pt: 'Estúdio Maker' },
     'nav.profile':     { en: 'Profile',      pt: 'Perfil' },
+    // ── Spotlight subtitles ──
+    'discover.sub':     { en: 'Picks blended from what you\'ve saved, followed, and browsed.', pt: 'Seleções baseadas no que você salvou, seguiu e explorou.' },
+
+    'spot.storeSub':    { en: 'Browse all listings',           pt: 'Ver todos os itens' },
+    'spot.feedSub':     { en: 'New from creators you follow',  pt: 'Novidades de criadores que você segue' },
+    'spot.savedSub':    { en: 'Your wishlist',                 pt: 'Seus favoritos' },
+    'spot.lbSub':       { en: 'Top members this week',         pt: 'Melhores membros da semana' },
+    'spot.trophiesSub': { en: 'Your unlocks and progress',     pt: 'Seus desbloqueios e progresso' },
+
     'shortcuts.title': { en: 'Keyboard shortcuts', pt: 'Atalhos de teclado' },
     'shortcuts.nav':   { en: 'Navigation',   pt: 'Navegação' },
     'shortcuts.search':{ en: 'Search',       pt: 'Busca' },
