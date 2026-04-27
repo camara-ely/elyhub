@@ -49,7 +49,7 @@ memberRoutes.get('/', requireAuth(), async (c: AppContext) => {
       orderClause = 'x.xp DESC, COALESCE(x.joined_at, x.updated_at * 1000) DESC';
       break;
     case 'name':
-      orderClause = 'COALESCE(x.display_name, x.user_id) COLLATE NOCASE ASC';
+      orderClause = 'COALESCE(u.global_name, u.username, x.display_name, x.user_id) COLLATE NOCASE ASC';
       break;
     case 'oldest':
       orderClause = 'COALESCE(x.joined_at, x.updated_at * 1000) ASC';
@@ -66,7 +66,10 @@ memberRoutes.get('/', requireAuth(), async (c: AppContext) => {
   const where: string[] = [];
   const args: (string | number)[] = [];
   if (search) {
-    where.push('(LOWER(x.display_name) LIKE ? OR x.user_id LIKE ?)');
+    // Search against both the fresh OAuth name (users table) and the bot's
+    // stored name (xp table) so results are correct regardless of which table
+    // has the up-to-date display name for a given member.
+    where.push('(LOWER(COALESCE(u.global_name, u.username, x.display_name)) LIKE ? OR x.user_id LIKE ?)');
     args.push(`${search}%`, `${search}%`);
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -83,9 +86,20 @@ memberRoutes.get('/', requireAuth(), async (c: AppContext) => {
     updated_at: number;
   }>(
     client,
-    `SELECT x.user_id, x.display_name, x.avatar_url,
+    // LEFT JOIN users so that members who have signed into the app get their
+    // current Discord display name and avatar (updated on every OAuth sign-in),
+    // rather than the potentially-stale data the bot last wrote to xp.
+    `SELECT x.user_id,
+            COALESCE(u.global_name, u.username, x.display_name) AS display_name,
+            COALESCE(
+              CASE WHEN u.avatar_hash IS NOT NULL AND u.avatar_hash != ''
+                   THEN 'https://cdn.discordapp.com/avatars/' || u.id || '/' || u.avatar_hash || '.png?size=128'
+                   ELSE NULL END,
+              x.avatar_url
+            ) AS avatar_url,
             x.xp, x.level, x.roles, x.joined_at, x.updated_at
      FROM xp x
+     LEFT JOIN users u ON u.id = x.user_id
      ${whereSql}
      ORDER BY ${orderClause}
      LIMIT ? OFFSET ?`,

@@ -421,11 +421,22 @@ meRoutes.get('/poll', optionalAuth(), async (c: AppContext) => {
     roles: string | null;
   }>(
     client,
-    `SELECT x.user_id, x.display_name, x.avatar_url,
+    // Prefer users table (updated on every OAuth sign-in) over xp table
+    // (updated by bot on XP events) so name/avatar changes show immediately
+    // once a member opens the app — no bot event required.
+    `SELECT x.user_id,
+            COALESCE(u.global_name, u.username, x.display_name) AS display_name,
+            COALESCE(
+              CASE WHEN u.avatar_hash IS NOT NULL AND u.avatar_hash != ''
+                   THEN 'https://cdn.discordapp.com/avatars/' || u.id || '/' || u.avatar_hash || '.png?size=128'
+                   ELSE NULL END,
+              x.avatar_url
+            ) AS avatar_url,
             x.xp, x.level, x.voice_seconds,
             x.gym_posts, x.gym_streak_current, x.gym_streak_best,
             x.last_daily_claim_day, x.last_booster_claim_day, x.roles
      FROM xp x
+     LEFT JOIN users u ON u.id = x.user_id
      ORDER BY x.xp DESC LIMIT 50`,
   );
 
