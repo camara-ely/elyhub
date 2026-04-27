@@ -46,7 +46,7 @@ memberRoutes.get('/', requireAuth(), async (c: AppContext) => {
   let orderClause: string;
   switch (sort) {
     case 'aura':
-      orderClause = 'MAX(0, x.xp - COALESCE(p.spent, 0)) DESC, COALESCE(x.joined_at, x.updated_at * 1000) DESC';
+      orderClause = 'x.xp DESC, COALESCE(x.joined_at, x.updated_at * 1000) DESC';
       break;
     case 'name':
       orderClause = 'COALESCE(x.display_name, x.user_id) COLLATE NOCASE ASC';
@@ -84,14 +84,8 @@ memberRoutes.get('/', requireAuth(), async (c: AppContext) => {
   }>(
     client,
     `SELECT x.user_id, x.display_name, x.avatar_url,
-            MAX(0, x.xp - COALESCE(p.spent, 0)) AS xp,
-            x.level, x.roles, x.joined_at, x.updated_at
+            x.xp, x.level, x.roles, x.joined_at, x.updated_at
      FROM xp x
-     LEFT JOIN (
-       SELECT user_id, SUM(aura_amount) AS spent
-       FROM purchases
-       GROUP BY user_id
-     ) p ON p.user_id = x.user_id
      ${whereSql}
      ORDER BY ${orderClause}
      LIMIT ? OFFSET ?`,
@@ -100,7 +94,7 @@ memberRoutes.get('/', requireAuth(), async (c: AppContext) => {
 
   const totalRow = await queryOne<{ total: number }>(
     client,
-    `SELECT COUNT(*) AS total FROM xp x LEFT JOIN (SELECT user_id, SUM(aura_amount) AS spent FROM purchases GROUP BY user_id) p ON p.user_id = x.user_id ${whereSql}`,
+    `SELECT COUNT(*) AS total FROM xp x ${whereSql}`,
     args,
   );
 
