@@ -199,6 +199,17 @@
      applyResolvedTheme can read window.Z when injecting zodiac tokens. -->
 <script type="text/babel" src="zodiac/tokens-zodiac.jsx"></script>
 <script type="text/babel" src="zodiac/ui-zodiac.jsx"></script>
+<!-- Cartographer (vintage map) theme tokens + UI primitives. Inert until
+     T.cartographer is true; nothing in the host references M* names directly. -->
+<script type="text/babel" src="cartographer/tokens-cartographer.jsx"></script>
+<script type="text/babel" src="cartographer/ui-cartographer.jsx"></script>
+<!-- Shared bilingual strings dict for both Cartographer themes. Exposes
+     window.tc(key, vars) which reads window.ElyI18N.getLang() + T.cartographerModern. -->
+<script type="text/babel" src="cartographer/strings.jsx"></script>
+<!-- Cartographer Modern — topographic dashboard variant. Inert until
+     T.cartographerModern is true. -->
+<script type="text/babel" src="cartographer-modern/tokens-modern.jsx"></script>
+<script type="text/babel" src="cartographer-modern/ui-modern.jsx"></script>
 <script type="text/babel" src="theme.jsx"></script>
 <script type="text/babel" src="shell.jsx"></script>
 <script type="text/babel" src="state.jsx"></script>
@@ -217,6 +228,29 @@
 <script type="text/babel" src="zodiac/views.jsx"></script>
 <script type="text/babel" src="zodiac/views2.jsx"></script>
 <script type="text/babel" src="zodiac/views3.jsx"></script>
+<!-- Cartographer variants. Mounted only when T.cartographer. -->
+<script type="text/babel" src="cartographer/views.jsx"></script>
+<script type="text/babel" src="cartographer/views2.jsx"></script>
+<script type="text/babel" src="cartographer/views3.jsx"></script>
+<script type="text/babel" src="cartographer/views4.jsx"></script>
+<script type="text/babel" src="cartographer/views5.jsx"></script>
+<script type="text/babel" src="cartographer/views6.jsx"></script>
+<script type="text/babel" src="cartographer/views7.jsx"></script>
+<script type="text/babel" src="cartographer/views8.jsx"></script>
+<script type="text/babel" src="cartographer/views9.jsx"></script>
+<script type="text/babel" src="cartographer/views10.jsx"></script>
+<script type="text/babel" src="cartographer/views11.jsx"></script>
+<script type="text/babel" src="cartographer/views12.jsx"></script>
+<!-- Cartographer Modern variants. -->
+<script type="text/babel" src="cartographer-modern/views.jsx"></script>
+<script type="text/babel" src="cartographer-modern/views2.jsx"></script>
+<script type="text/babel" src="cartographer-modern/views3.jsx"></script>
+<script type="text/babel" src="cartographer-modern/views4.jsx"></script>
+<script type="text/babel" src="cartographer-modern/views5.jsx"></script>
+<script type="text/babel" src="cartographer-modern/views6.jsx"></script>
+<script type="text/babel" src="cartographer-modern/views7.jsx"></script>
+<script type="text/babel" src="cartographer-modern/views8.jsx"></script>
+<script type="text/babel" src="cartographer-modern/views9.jsx"></script>
 <script type="text/babel" src="app.jsx"></script>
 </body>
 </html>

@@ -696,6 +696,14 @@ function ProfileView({ state, onQuick, setView, onPublish, onEdit, publishing, w
   if (T.zodiac && window.ZodiacProfileView) {
     return <window.ZodiacProfileView state={state} onQuick={onQuick} setView={setView} onPublish={onPublish} onEdit={onEdit} publishing={publishing} wishlist={wishlist}/>;
   }
+  // Cartographer (vintage) gate — Carteira de Bordo with WaxSeal portrait.
+  if (T.cartographer && window.CartographerProfileView) {
+    return <window.CartographerProfileView state={state} onQuick={onQuick} setView={setView} onPublish={onPublish} onEdit={onEdit} publishing={publishing} wishlist={wishlist}/>;
+  }
+  // Cartographer Modern gate — surveyor profile.
+  if (T.cartographerModern && window.CartographerModernProfileView) {
+    return <window.CartographerModernProfileView state={state} onQuick={onQuick} setView={setView} onPublish={onPublish} onEdit={onEdit} publishing={publishing} wishlist={wishlist}/>;
+  }
   const me = window.ME || {};
   // Read publishing.version to re-derive when user publishes/unpublishes.
   const _v = publishing?.version;

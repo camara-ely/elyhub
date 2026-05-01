@@ -72,6 +72,12 @@ function ReportModal({ target, reports, onClose }) {
   if (T.zodiac && window.ZodiacReportModal) {
     return <window.ZodiacReportModal target={target} reports={reports} onClose={onClose}/>;
   }
+  if (T.cartographer && window.CartographerReportModal) {
+    return <window.CartographerReportModal target={target} reports={reports} onClose={onClose}/>;
+  }
+  if (T.cartographerModern && window.CartographerModernReportModal) {
+    return <window.CartographerModernReportModal target={target} reports={reports} onClose={onClose}/>;
+  }
   // `target` is { kind, id, name }. `reports` is the useReports instance.
   const options = REPORT_REASONS[target.kind] || REPORT_REASONS.user;
   const [reason, setReason] = React.useState(options[0].id);
@@ -314,6 +320,14 @@ function GiftModal({ state, onClose, onSend, initialFriend }) {
   if (T.zodiac && window.ZodiacGiftModal) {
     return <window.ZodiacGiftModal state={state} onClose={onClose} onSend={onSend} initialFriend={initialFriend}/>;
   }
+  // Cartographer (vintage) gate — envelope with wax seal.
+  if (T.cartographer && window.CartographerGiftModal) {
+    return <window.CartographerGiftModal state={state} onClose={onClose} onSend={onSend} initialFriend={initialFriend}/>;
+  }
+  // Cartographer Modern gate — telemetry transmission.
+  if (T.cartographerModern && window.CartographerModernGiftModal) {
+    return <window.CartographerModernGiftModal state={state} onClose={onClose} onSend={onSend} initialFriend={initialFriend}/>;
+  }
   const [friend, setFriend] = React.useState(initialFriend || null);
   const [amount, setAmount] = React.useState(500);
   const [note, setNote] = React.useState('');
@@ -548,6 +562,14 @@ function RedeemModal({ reward, state, onClose, onConfirm }) {
   // Zodiac gate — delegates to celestial variant. Original below untouched.
   if (T.zodiac && window.ZodiacRedeemModal) {
     return <window.ZodiacRedeemModal reward={reward} state={state} onClose={onClose} onConfirm={onConfirm}/>;
+  }
+  // Cartographer gate — paper certificate.
+  if (T.cartographer && window.CartographerRedeemModal) {
+    return <window.CartographerRedeemModal reward={reward} state={state} onClose={onClose} onConfirm={onConfirm}/>;
+  }
+  // Cartographer Modern gate — dashboard log.
+  if (T.cartographerModern && window.CartographerModernRedeemModal) {
+    return <window.CartographerModernRedeemModal reward={reward} state={state} onClose={onClose} onConfirm={onConfirm}/>;
   }
   const [stage, setStage] = React.useState('confirm');
   const [error, setError] = React.useState(null);
@@ -872,6 +894,14 @@ function NotifDrawer({ onClose, library, reviews, follows, setView }) {
   if (T.zodiac && window.ZodiacNotifDrawer) {
     return <window.ZodiacNotifDrawer onClose={onClose} library={library} reviews={reviews} follows={follows} setView={setView}/>;
   }
+  // Cartographer gate — parchment Diário de Avisos drawer.
+  if (T.cartographer && window.CartographerNotifDrawer) {
+    return <window.CartographerNotifDrawer onClose={onClose} library={library} reviews={reviews} follows={follows} setView={setView}/>;
+  }
+  // Cartographer Modern gate — telemetry signal inbox.
+  if (T.cartographerModern && window.CartographerModernNotifDrawer) {
+    return <window.CartographerModernNotifDrawer onClose={onClose} library={library} reviews={reviews} follows={follows} setView={setView}/>;
+  }
   const meId = window.ME?.id || null;
   const feed = Array.isArray(window.AURA_FEED) ? window.AURA_FEED : [];
   const [lastSeen] = React.useState(getLastSeen);
@@ -1092,6 +1122,12 @@ function ShortcutsModal({ onClose }) {
   if (T.zodiac && window.ZodiacShortcutsModal) {
     return <window.ZodiacShortcutsModal onClose={onClose}/>;
   }
+  if (T.cartographer && window.CartographerShortcutsModal) {
+    return <window.CartographerShortcutsModal onClose={onClose}/>;
+  }
+  if (T.cartographerModern && window.CartographerModernShortcutsModal) {
+    return <window.CartographerModernShortcutsModal onClose={onClose}/>;
+  }
   // Esc to close — standard modal affordance.
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -1212,6 +1248,14 @@ function ShortcutsModal({ onClose }) {
 function SettingsModal({ onClose, tweaks, tweak, resolvedTheme, updateCustom, selectCustom, addCustomSlot, deleteCustomSlot, updatePresetOverride, library }) {
   if (T.zodiac && window.ZodiacSettingsModal) {
     return <window.ZodiacSettingsModal onClose={onClose} tweaks={tweaks} tweak={tweak} resolvedTheme={resolvedTheme} updateCustom={updateCustom} selectCustom={selectCustom} addCustomSlot={addCustomSlot} deleteCustomSlot={deleteCustomSlot} updatePresetOverride={updatePresetOverride} library={library}/>;
+  }
+  // Cartographer (vintage) gate — parchment dialog wraps the host panes.
+  if (T.cartographer && window.CartographerSettingsModal) {
+    return <window.CartographerSettingsModal onClose={onClose} tweaks={tweaks} tweak={tweak} resolvedTheme={resolvedTheme} updateCustom={updateCustom} selectCustom={selectCustom} addCustomSlot={addCustomSlot} deleteCustomSlot={deleteCustomSlot} updatePresetOverride={updatePresetOverride} library={library}/>;
+  }
+  // Cartographer Modern gate — dark glass dialog wraps the host panes.
+  if (T.cartographerModern && window.CartographerModernSettingsModal) {
+    return <window.CartographerModernSettingsModal onClose={onClose} tweaks={tweaks} tweak={tweak} resolvedTheme={resolvedTheme} updateCustom={updateCustom} selectCustom={selectCustom} addCustomSlot={addCustomSlot} deleteCustomSlot={deleteCustomSlot} updatePresetOverride={updatePresetOverride} library={library}/>;
   }
   const [section, setSection] = React.useState('account');
   const lang = window.ElyI18N?.getLang?.() || 'en';
@@ -1682,16 +1726,26 @@ function ThemeCanvas({ resolved, updateCustom, selectedId, setSelectedId, editab
 function ThemeTile({ config, label, active, onClick, accentColor, dim = false, locked = false, lockHint }) {
   const pts = (config?.points || []).slice(0, 5);
   const glow = accentColor || config?.accentHi || config?.accent || T.accent;
-  // Zodiac gets a distinct "celestial premium" look: sharp corners + persistent
-  // gold border so it stands apart from every other tile at a glance.
-  const isZodiac = !!config?.unlock?.kassa;
+  // Premium themes get distinct "luxury" framing — sharp corners + persistent
+  // accent border so they stand apart from every other tile at a glance.
+  // Zodiac → gold leaf. Cartographer → wax-red ink frame on parchment.
+  const isZodiac       = config?.unlock?.kassa === 'gleipnir';
+  // Cartographer is free (no unlock.kassa) — match by name so it still
+  // gets the wax-red premium framing without the lock gate.
+  const isCartographer = config?.name === 'Cartographer';
+  const isModern       = config?.name === 'Cartographer Modern';
+  const isPremium      = isZodiac || isCartographer || isModern;
   const GOLD = '#C9A24E';
-  const radius = isZodiac ? 0 : T.r.md;
-  const border = isZodiac
-    ? (active ? `1.5px solid ${GOLD}` : `1px solid rgba(201,162,78,0.55)`)
+  const WAX  = '#8B2418';
+  const FAIRWAY = '#9BD66B';
+  const frame = isCartographer ? WAX : isModern ? FAIRWAY : GOLD;
+  const frameRgba = isCartographer ? '139,36,24' : isModern ? '155,214,107' : '201,162,78';
+  const radius = isPremium ? 0 : T.r.md;
+  const border = isPremium
+    ? (active ? `1.5px solid ${frame}` : `1px solid rgba(${frameRgba},0.55)`)
     : (active ? `1.5px solid ${glow}` : `0.5px solid ${T.glassBorder}`);
-  const shadow = isZodiac
-    ? (active ? `0 0 22px rgba(201,162,78,0.55), 0 0 6px rgba(201,162,78,0.3)` : `0 0 8px rgba(201,162,78,0.2)`)
+  const shadow = isPremium
+    ? (active ? `0 0 22px rgba(${frameRgba},0.55), 0 0 6px rgba(${frameRgba},0.3)` : `0 0 8px rgba(${frameRgba},0.2)`)
     : (active ? `0 0 20px ${glow}80` : 'none');
   return (
     <button
@@ -1705,18 +1759,63 @@ function ThemeTile({ config, label, active, onClick, accentColor, dim = false, l
         opacity: dim ? 0.85 : (locked ? 0.78 : 1),
       }}
     >
-      <div style={{ height: 64, position: 'relative', overflow: 'hidden', background: isZodiac ? '#0A0805' : (config?.base || '#0A0D1A') }}>
-        {config?.bgImage && !isZodiac && (
+      <div style={{
+        height: 64, position: 'relative', overflow: 'hidden',
+        background: isCartographer
+          ? 'linear-gradient(135deg, #EFE3C8 0%, #DECFAE 50%, #C9B791 100%)'
+          : isModern
+            ? 'linear-gradient(135deg, #0E1614 0%, #1A2A24 50%, #0E1614 100%)'
+            : (isZodiac ? '#0A0805' : (config?.base || '#0A0D1A')),
+      }}>
+        {/* Cartographer also gets its bgImage in the tile preview — the
+            wallpaper IS the theme's identity. We render it *under* the
+            MCompass below so the rosa-dos-ventos sits on the parchment map. */}
+        {config?.bgImage && (!isPremium || isCartographer) && (
           <div style={{
             position: 'absolute', inset: 0,
             backgroundImage: `url("${config.bgImage}")`,
             backgroundSize: 'cover', backgroundPosition: 'center',
-            opacity: typeof config.bgOpacity === 'number' ? config.bgOpacity : 0.9,
+            opacity: isCartographer ? 0.85 : (typeof config.bgOpacity === 'number' ? config.bgOpacity : 0.9),
           }}/>
         )}
-        {/* Zodiac tile: show the celestial starburst centered. Skip the
-            blurry orb points — they don't read well at 64 px. */}
-        {isZodiac ? (
+        {/* Premium tile signatures: Zodiac → starburst centered.
+            Cartographer → MCompass (pinned to bottom-right, partially clipped
+            so the rosa-dos-ventos reads as a bleed motif on the parchment). */}
+        {isCartographer ? (
+          <div style={{
+            position: 'absolute', right: -8, bottom: -8, opacity: 0.55, pointerEvents: 'none',
+          }}>
+            {window.MCompass
+              ? React.createElement(window.MCompass, { size: 72, wax: false })
+              : <span style={{ color: WAX, fontSize: 28, lineHeight: 1 }}>✦</span>}
+          </div>
+        ) : isModern ? (
+          <>
+            {/* Topographic isolines + center pin */}
+            <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.4 }}
+                 viewBox="0 0 256 64" preserveAspectRatio="xMidYMid slice">
+              <g fill="none" stroke="#3B5A40" strokeWidth="0.5">
+                <path d="M-10 18 Q60 8 120 22 T270 18"/>
+                <path d="M-10 32 Q60 22 120 36 T270 32"/>
+                <path d="M-10 46 Q60 36 120 50 T270 46"/>
+              </g>
+            </svg>
+            <div style={{
+              position: 'absolute', left: '50%', top: '50%',
+              transform: 'translate(-50%,-50%) rotate(-45deg)',
+              width: 26, height: 26, borderRadius: '50% 50% 50% 0',
+              background: FAIRWAY,
+              boxShadow: `0 0 14px ${FAIRWAY}88`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{
+                transform: 'rotate(45deg)',
+                fontFamily: '"JetBrains Mono",monospace', fontSize: 11, fontWeight: 700,
+                color: '#0E1614',
+              }}>1</span>
+            </div>
+          </>
+        ) : isZodiac ? (
           <div style={{
             position: 'absolute', inset: 0, display: 'flex',
             alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
@@ -1737,12 +1836,12 @@ function ThemeTile({ config, label, active, onClick, accentColor, dim = false, l
             transform: 'translate(-50%, -50%)',
           }}/>
         ))}
-        {config?.unlock?.kassa && (
+        {(config?.unlock?.kassa || isCartographer) && (
           <>
             <span style={{
               position: 'absolute', top: 6, right: 8,
-              color: GOLD, fontSize: 11, lineHeight: 1,
-              filter: `drop-shadow(0 0 4px ${GOLD}99)`,
+              color: frame, fontSize: 11, lineHeight: 1,
+              filter: `drop-shadow(0 0 4px ${frame}99)`,
               pointerEvents: 'none',
             }}>✦</span>
           </>
@@ -1830,7 +1929,17 @@ function AppearancePane({ tweaks, tweak, resolved, updateCustom, selectCustom, a
   }, [library?.items]);
   const isPresetLocked = (preset) => {
     const need = preset?.unlock?.kassa;
-    return !!need && !ownedKassaProducts.has(need);
+    if (!need) return false;
+    if (ownedKassaProducts.has(need)) return false;
+    // Dev override — localStorage.ely:dev:stub-<product> = '1' bypasses the
+    // gate entirely. Lets us test premium themes without wiring a real
+    // listing+library round-trip. Per-product so each can be toggled
+    // independently. Reads localStorage directly (not state) so the answer
+    // is fresh on every render — no reload needed after flipping the flag.
+    try {
+      if (localStorage.getItem(`ely:dev:stub-${need}`) === '1') return false;
+    } catch {}
+    return true;
   };
   // When a locked tile is tapped, route to the unlock listing instead of
   // switching the theme (which would silently fail anyway since resolveTheme
@@ -1846,7 +1955,7 @@ function AppearancePane({ tweaks, tweak, resolved, updateCustom, selectCustom, a
         ElyNotify?.toast?.({
           text: listing
             ? `${preset.name} unlocks with ${listing.title}`
-            : `${preset.name} requires the Hugin plugin`,
+            : `${preset.name} requires a premium plugin`,
           kind: 'info',
         });
       } catch {}

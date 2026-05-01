@@ -1406,6 +1406,12 @@ function DiscoverView({ state, setView, wishlist, follows, recent, library, bloc
   if (T.zodiac && window.ZodiacDiscoverView) {
     return <window.ZodiacDiscoverView state={state} setView={setView} wishlist={wishlist} follows={follows} recent={recent} library={library} blocks={blocks}/>;
   }
+  if (T.cartographer && window.CartographerDiscoverView) {
+    return <window.CartographerDiscoverView state={state} setView={setView} wishlist={wishlist} follows={follows} recent={recent} library={library} blocks={blocks}/>;
+  }
+  if (T.cartographerModern && window.CartographerModernDiscoverView) {
+    return <window.CartographerModernDiscoverView state={state} setView={setView} wishlist={wishlist} follows={follows} recent={recent} library={library} blocks={blocks}/>;
+  }
   const all = (window.LISTINGS || []).filter((l) => !(blocks && blocks.has(l.sellerId)));
   const ownedIds = new Set((library?.items || []).filter((it) => it.status === 'active').map((it) => it.listingId));
   const recentIds = new Set(recent?.items || []);
@@ -1611,6 +1617,12 @@ function CollectionView({ state, setView, collectionId, wishlist }) {
 // user can't currently afford so they know what to work toward. Empty state
 // points back to the marketplace so this page is never a dead end.
 function SavedView({ state, setView, wishlist }) {
+  if (T.cartographer && window.CartographerSavedView) {
+    return <window.CartographerSavedView state={state} setView={setView} wishlist={wishlist}/>;
+  }
+  if (T.cartographerModern && window.CartographerModernSavedView) {
+    return <window.CartographerModernSavedView state={state} setView={setView} wishlist={wishlist}/>;
+  }
   if (T.zodiac && window.ZodiacSavedView) {
     return <window.ZodiacSavedView state={state} setView={setView} wishlist={wishlist}/>;
   }
@@ -1789,6 +1801,12 @@ function MessageListingCard({ listingId, onOpen, mine }) {
 function MessagesView({ state, setView, messages, threadId, blocks, reports }) {
   if (T.zodiac && window.ZodiacMessagesView) {
     return <window.ZodiacMessagesView state={state} setView={setView} messages={messages} threadId={threadId} blocks={blocks} reports={reports}/>;
+  }
+  if (T.cartographer && window.CartographerMessagesView) {
+    return <window.CartographerMessagesView state={state} setView={setView} messages={messages} threadId={threadId} blocks={blocks} reports={reports}/>;
+  }
+  if (T.cartographerModern && window.CartographerModernMessagesView) {
+    return <window.CartographerModernMessagesView state={state} setView={setView} messages={messages} threadId={threadId} blocks={blocks} reports={reports}/>;
   }
   const meId = messages.meId;
   // Hide threads from blocked users. If the viewer is currently on a blocked
@@ -2078,6 +2096,12 @@ function MessagesView({ state, setView, messages, threadId, blocks, reports }) {
 function MembersView({ state, setView, messages }) {
   if (T.zodiac && window.ZodiacMembersView) {
     return <window.ZodiacMembersView state={state} setView={setView} messages={messages}/>;
+  }
+  if (T.cartographer && window.CartographerMembersView) {
+    return <window.CartographerMembersView state={state} setView={setView} messages={messages}/>;
+  }
+  if (T.cartographerModern && window.CartographerModernMembersView) {
+    return <window.CartographerModernMembersView state={state} setView={setView} messages={messages}/>;
   }
   const [items, setItems] = React.useState([]);
   const [total, setTotal] = React.useState(0);
@@ -2377,6 +2401,12 @@ function MemberCard({ m, setView, messages, meId }) {
 // yet, we suggest the top creators so the page isn't a dead end. Also marks
 // the feed as seen on mount so the sidebar pip clears.
 function FeedView({ state, setView, follows, wishlist }) {
+  if (T.cartographer && window.CartographerFeedView) {
+    return <window.CartographerFeedView state={state} setView={setView} follows={follows} wishlist={wishlist}/>;
+  }
+  if (T.cartographerModern && window.CartographerModernFeedView) {
+    return <window.CartographerModernFeedView state={state} setView={setView} follows={follows} wishlist={wishlist}/>;
+  }
   if (T.zodiac && window.ZodiacFeedView) {
     return <window.ZodiacFeedView state={state} setView={setView} follows={follows} wishlist={wishlist}/>;
   }

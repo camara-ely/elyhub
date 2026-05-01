@@ -181,6 +181,15 @@
   // ───────── Main view ───────────────────────────────────────────────────────
 
   function MyLicensesView() {
+    // Theme-variant gates — each variant lives in its own file and uses the
+    // same /me/licenses backend, so we can hand off the whole render. The
+    // host implementation below stays for the default themes.
+    if (T.cartographer && window.CartographerMyLicensesView) {
+      return <window.CartographerMyLicensesView/>;
+    }
+    if (T.cartographerModern && window.CartographerModernMyLicensesView) {
+      return <window.CartographerModernMyLicensesView/>;
+    }
     const [data, setData] = React.useState({ loading: true, items: [], error: null });
     const [busy, setBusy] = React.useState(null);
     // Per-license cooldown map, key = license_id → seconds remaining. Set

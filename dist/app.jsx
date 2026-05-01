@@ -40,6 +40,79 @@
   } catch {}
 })();
 
+// ────────────── Dev stub: Cartographer listing + library entry ──────────────
+// Same pattern as Hugin above, but the unlock check in modals.jsx walks
+// `library.items` (sourced from localStorage at 'elyhub.library.v1'), so
+// we ALSO need to inject a library entry — not just a window listing.
+// Toggle via:
+//   localStorage.setItem('ely:dev:stub-cartographer', '1'); location.reload();
+(() => {
+  const STUB = {
+    id: 'l-carto-dev', type: 'plugin', sellerId: 'kassa',
+    title: 'Cartographer (dev stub)', tagline: 'local theme unlock',
+    price: 30000, billing: 'monthly', tags: ['cartographer'],
+    kassa_product_id: 'cartographer',
+  };
+  const LIBRARY_KEY = 'elyhub.library.v1';
+  const inject = () => {
+    if (localStorage.getItem('ely:dev:stub-cartographer') !== '1') return;
+    // 1. Push listing into window.LISTINGS so the join in ownedKassaProducts
+    //    finds it. The /listings poll wipes this on every tick — that's why
+    //    inject is rebound to __subscribeLive below.
+    const L = (window.LISTINGS = window.LISTINGS || []);
+    if (!L.some((l) => (l.kassa_product_id || l.kassaProductId) === 'cartographer')) {
+      L.push(STUB);
+    }
+    // 2. Inject a library entry into localStorage. Done once per page
+    //    (not on every poll) — useLibrary reads localStorage on mount and
+    //    won't re-read unless cross-tab storage event fires. Idempotent.
+    try {
+      const raw = localStorage.getItem(LIBRARY_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr) && !arr.some((it) => it.listingId === STUB.id)) {
+        arr.push({
+          listingId: STUB.id, type: 'one-time',
+          purchasedAt: Date.now(), status: 'active',
+        });
+        localStorage.setItem(LIBRARY_KEY, JSON.stringify(arr));
+      }
+    } catch {}
+  };
+  try {
+    inject();
+    const hookOnce = () => {
+      if (typeof window.__subscribeLive === 'function') {
+        window.__subscribeLive(inject);
+        return true;
+      }
+      return false;
+    };
+    if (!hookOnce()) {
+      const id = setInterval(() => { if (hookOnce()) clearInterval(id); }, 200);
+      setTimeout(() => clearInterval(id), 10000);
+    }
+  } catch {}
+
+  // Console one-shot: window.__unlockCarto() flips the flag, injects
+  // listing+library, and reloads — saves dancing with localStorage manually.
+  // Inverse: window.__lockCarto().
+  window.__unlockCarto = () => {
+    localStorage.setItem('ely:dev:stub-cartographer', '1');
+    inject();
+    location.reload();
+  };
+  window.__lockCarto = () => {
+    localStorage.removeItem('ely:dev:stub-cartographer');
+    try {
+      const raw = localStorage.getItem(LIBRARY_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      const next = arr.filter((it) => it.listingId !== STUB.id);
+      localStorage.setItem(LIBRARY_KEY, JSON.stringify(next));
+    } catch {}
+    location.reload();
+  };
+})();
+
 
 // ────────────── App ──────────────
 

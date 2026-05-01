@@ -161,6 +161,33 @@ const THEME_PRESETS = {
     points: [],
     unlock: { kassa: 'gleipnir' },
   },
+  // ────── Cartographer — vintage map / diário de bordo ──────
+  // Premium theme: aged parchment + sepia ink + wax-red seals + gold leaf.
+  // Unlock channel mirrors Zodiac (Kassa product). Visual takeover via
+  // dist/cartographer/views.jsx — the host hero/leaderboard delegate to
+  // CartographerHomeView when T.cartographer is true. The base/points
+  // here only matter for the brief moment before the AmbientBG is hidden;
+  // we use a warm parchment tone so the swap doesn't flash blue.
+  cartographer: {
+    name: 'Cartographer',
+    accent: '#8B2418', accentHi: '#B33524',
+    base: 'radial-gradient(ellipse at 50% 50%, #EFE3C8 0%, #DECFAE 60%, #C9B791 100%)',
+    bgImage: 'cartographer/wallpaper.png',
+    bgOpacity: 0.92,
+    bgOverlay: 'linear-gradient(180deg, rgba(232,220,192,0.10), rgba(220,207,174,0.18))',
+    points: [],
+  },
+  // ────── Cartographer Modern — topographic dashboard ──────
+  // Same "map" DNA as Cartographer but inverted: dark slate, fairway green,
+  // cyan water, GPS/dashboard aesthetic. Visual takeover via dist/
+  // cartographer-modern/views.jsx. No wallpaper — the topographic isolines
+  // BG is rendered by TopoBG mounted in Shell.
+  cartographerModern: {
+    name: 'Cartographer Modern',
+    accent: '#9BD66B', accentHi: '#B7E68B',
+    base: 'radial-gradient(ellipse at 30% 20%, #1A2A24 0%, #0E1614 60%, #0E1614 100%)',
+    points: [],
+  },
 };
 
 // localStorage keys. One for the active theme selection + one for the saved
@@ -388,7 +415,10 @@ function resolveTheme(tweaks) {
     };
   }
   const p = THEME_PRESETS[key] || THEME_PRESETS.nocturne;
-  return { key, ...p, bgImage: null, bgOpacity: 0.75, bgBlur: 0, autoContrast: true };
+  // Defaults FIRST, preset spread last — otherwise a preset's bgImage gets
+  // wiped to null. Cartographer is the first non-wallpaper preset to set
+  // bgImage; before that the bug was invisible.
+  return { key, bgImage: null, bgOpacity: 0.75, bgBlur: 0, autoContrast: true, ...p };
 }
 
 // Write the resolved theme into the global T token object + re-flow
@@ -464,14 +494,30 @@ function applyResolvedTheme(r) {
   // token mutation by ~650ms so the overlay reaches full opacity BEFORE the
   // theme visibly flips. Without this delay the user sees the new theme for
   // a flash before the curtain falls.
+  const PREMIUM_KEYS = ['zodiac', 'cartographer', 'cartographerModern'];
   const crossing = !skip
     && typeof prevKey === 'string' && prevKey !== r.key
-    && (r.key === 'zodiac' || prevKey === 'zodiac');
+    && (PREMIUM_KEYS.includes(r.key) || PREMIUM_KEYS.includes(prevKey));
   if (crossing && !T.__inDeferredApply) {
-    const goingZodiac = r.key === 'zodiac';
+    // 'in' = entering a premium theme. 'out' = leaving one. The detail
+    // includes the actual to/from keys so each premium variant's curtain
+    // component can decide whether the event is for it.
+    //
+    // CRITICAL: when a transition involves TWO premium themes (e.g. zodiac
+    // → cartographer), both curtains would normally fire and overlay each
+    // other. We pick a single `winner` here — the destination's curtain
+    // wins when going INTO a premium theme, otherwise the source's
+    // curtain wins (it's the one being "left"). Each curtain component
+    // checks `e.detail.winner === MY_KEY` and bails if not the winner.
+    const enteringPremium = PREMIUM_KEYS.includes(r.key);
+    const winner = enteringPremium ? r.key : prevKey;
     try {
       window.dispatchEvent(new CustomEvent('ely:theme-transition', {
-        detail: { from: prevKey, to: r.key, direction: goingZodiac ? 'in' : 'out' },
+        detail: {
+          from: prevKey, to: r.key,
+          direction: enteringPremium ? 'in' : 'out',
+          winner,
+        },
       }));
     } catch {}
     T.__inDeferredApply = true;
@@ -570,6 +616,88 @@ function applyResolvedTheme(r) {
     if (TY.__sansSnapshot.numLarge && TY.numLarge) Object.assign(TY.numLarge, reset, TY.__sansSnapshot.numLarge);
     if (TY.__sansSnapshot.numMed && TY.numMed)     Object.assign(TY.numMed,   reset, TY.__sansSnapshot.numMed);
     if (TY.__sansSnapshot.micro && TY.micro)       Object.assign(TY.micro,    reset, TY.__sansSnapshot.micro);
+  }
+
+  // ────── Cartographer Modern flag + token swap ──────
+  // Dashboard topographic palette. Stays dark like default themes but with
+  // fairway-green accent and JetBrains Mono for numbers.
+  T.cartographerModern = r.key === 'cartographerModern';
+  if (T.cartographerModern && typeof window !== 'undefined' && window.Mm) {
+    const Mg = window.Mm;
+    if (T.r) Object.assign(T.r, { sm: 4, md: 6, lg: 8, xl: 10, xxl: 12, pill: 9999 });
+    T.accent       = Mg.accent;
+    T.accentHi     = Mg.accentHi;
+    T.accentGlow   = Mg.accentGlow;
+    T.glassBg      = `linear-gradient(135deg, rgba(20,38,32,0.55), rgba(15,24,22,0.75))`;
+    T.glassBg2     = `linear-gradient(135deg, rgba(26,42,36,0.55), rgba(20,32,28,0.75))`;
+    T.glassBorder  = Mg.hair2;
+    T.glassBorder2 = Mg.hair3;
+    T.glassHi      = Mg.hair;
+    T.text         = Mg.text;
+    T.text2        = Mg.text2;
+    T.text3        = Mg.text3;
+    T.text4        = Mg.text4;
+    T.textOnBg     = Mg.text;
+    T.textOnBg2    = Mg.text2;
+    T.textOnBg3    = Mg.text3;
+    T.textOnBgShadow = '0 1px 2px rgba(0,0,0,0.45), 0 0 10px rgba(0,0,0,0.25)';
+    T.isLight      = false;
+  }
+
+  // ────── Cartographer flag + token swap ──────
+  // Mirrors the zodiac path above but with parchment palette. Single
+  // boolean read by home.jsx (and later sidebar/topbar) to delegate to
+  // CartographerHomeView. Sepia text, wax-red accent, parchment glass.
+  T.cartographer = r.key === 'cartographer';
+  if (T.cartographer && typeof window !== 'undefined' && window.M) {
+    const Mg = window.M;
+    if (T.r) Object.assign(T.r, { sm: 0, md: 2, lg: 3, xl: 4, xxl: 4, pill: 9999 });
+    T.accent       = Mg.wax;
+    T.accentHi     = Mg.waxHi;
+    T.accentGlow   = Mg.waxGlow;
+    T.glassBg      = `linear-gradient(180deg, ${Mg.surface}, ${Mg.paper})`;
+    T.glassBg2     = `linear-gradient(180deg, ${Mg.paper}, ${Mg.paper2})`;
+    T.glassBorder  = Mg.hair2;
+    T.glassBorder2 = Mg.hair3;
+    T.glassHi      = Mg.hair;
+    T.text         = Mg.ink;
+    T.text2        = Mg.ink2;
+    T.text3        = Mg.ink3;
+    T.text4        = Mg.ink4;
+    T.textOnBg     = Mg.ink;
+    T.textOnBg2    = Mg.ink2;
+    T.textOnBg3    = Mg.ink3;
+    T.textOnBgShadow = '0 1px 2px rgba(255,235,200,0.55), 0 0 10px rgba(255,235,200,0.30)';
+    T.isLight      = true;
+
+    // Snapshot sans typography on first apply so we can restore on exit.
+    // Reuses the same __sansSnapshot slot as Zodiac since the source-of-truth
+    // sans values are identical — whichever theme switches first claims it.
+    if (!TY.__sansSnapshot) {
+      TY.__sansSnapshot = {
+        display: { ...TY.display }, h1: { ...TY.h1 },
+        h2: { ...TY.h2 }, h3: { ...TY.h3 },
+        numLarge: TY.numLarge ? { ...TY.numLarge } : null,
+        numMed: TY.numMed ? { ...TY.numMed } : null,
+        micro: TY.micro ? { ...TY.micro } : null,
+      };
+    }
+    // Cartographer uses Cinzel for display (all-caps, geometric serif) +
+    // Cormorant Garamond for body. Different from Zodiac's italic-Cormorant
+    // headings so the two premium themes feel distinct.
+    const dispFont = '"Cinzel","Cormorant Garamond",Georgia,serif';
+    const bodyFont = '"Cormorant Garamond","EB Garamond",Georgia,serif';
+    Object.assign(TY.display, { fontFamily: dispFont, fontStyle: 'normal', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' });
+    Object.assign(TY.h1,      { fontFamily: dispFont, fontStyle: 'normal', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' });
+    Object.assign(TY.h2,      { fontFamily: dispFont, fontStyle: 'normal', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' });
+    Object.assign(TY.h3,      { fontFamily: dispFont, fontStyle: 'normal', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' });
+    if (TY.numLarge) Object.assign(TY.numLarge, { fontFamily: dispFont, fontStyle: 'normal', fontWeight: 500 });
+    if (TY.numMed)   Object.assign(TY.numMed,   { fontFamily: dispFont, fontStyle: 'normal', fontWeight: 500 });
+    if (TY.micro)    Object.assign(TY.micro, {
+      fontFamily: '"Cinzel","Cormorant SC",serif',
+      letterSpacing: '0.28em',
+      textTransform: 'uppercase',
+    });
   }
 }
 
@@ -727,7 +855,12 @@ function AmbientBG({ resolved }) {
       )}
       <div style={{
         position: 'absolute', inset: 0,
-        background: resolved?.bgImage ? 'linear-gradient(180deg, rgba(3,6,14,0.25), rgba(3,6,14,0.45))' : base,
+        // Themes can specify a custom `bgOverlay` to tone the wallpaper —
+        // the default dark gradient is fine for night-mode wallpapers but
+        // wrong for warm/light ones (e.g. Cartographer's parchment map).
+        background: resolved?.bgImage
+          ? (resolved?.bgOverlay || 'linear-gradient(180deg, rgba(3,6,14,0.25), rgba(3,6,14,0.45))')
+          : base,
         transition: 'background 0.8s',
       }}/>
       {/* Skip the light-point orbs when a wallpaper is set — user picked an

@@ -19,14 +19,23 @@
 function Shell({ view, setView, state, onQuick, resolvedTheme, library, wishlist, follows, reviews, messages, children }) {
   const [notifOpen, setNotifOpen] = React.useState(false);
   // Theme-transition overlay — mounts unconditionally so it can fire when
-  // leaving zodiac too. The component listens for 'ely:theme-transition'
-  // and renders null when no transition is active.
-  const ZTrans = window.ZodiacThemeTransition;
+  // leaving zodiac/cartographer too. Each premium variant has its own
+  // curtain component that filters the event by theme key, so both can be
+  // mounted without interfering.
+  const ZTrans  = window.ZodiacThemeTransition;
+  const MTrans  = window.CartographerThemeTransition;
+  const MMTrans = window.ModernThemeTransition;
   return (
     <div style={{ position: 'relative', height: '100vh', overflow: 'hidden', color: T.text, fontFamily: T.fontSans }}>
       {ZTrans && <ZTrans/>}
+      {MTrans && <MTrans/>}
+      {MMTrans && <MMTrans/>}
       <a href="#main-content" className="skip-link">Skip to content</a>
       <AmbientBG resolved={resolvedTheme}/>
+      {/* Cartographer Modern — topographic isolines + grid overlay. Mounted
+          here (not inside HomeView) so it sits below the zIndex:1 panes
+          flex container. Auto-skipped by other themes. */}
+      {T.cartographerModern && window.TopoBG && React.createElement(window.TopoBG)}
       {/* Zodiac-only overlay: faint starfield drawn over the AmbientBG. The
           component checks T.starfield internally and noops for other themes. */}
       <ZodiacStarfield/>
@@ -91,6 +100,14 @@ function Sidebar({ view, setView, state, onQuick, library, wishlist, follows, me
   // 100% untouched for every other theme.
   if (T.zodiac && window.ZodiacSidebar) {
     return <window.ZodiacSidebar view={view} setView={setView} state={state} onQuick={onQuick} library={library} wishlist={wishlist} follows={follows} messages={messages}/>;
+  }
+  // Cartographer (vintage) gate — parchment sidebar with PT-BR vintage labels.
+  if (T.cartographer && window.CartographerSidebar) {
+    return <window.CartographerSidebar view={view} setView={setView} state={state} onQuick={onQuick} library={library} wishlist={wishlist} follows={follows} messages={messages}/>;
+  }
+  // Cartographer Modern gate — dark glass sidebar.
+  if (T.cartographerModern && window.CartographerModernSidebar) {
+    return <window.CartographerModernSidebar view={view} setView={setView} state={state} onQuick={onQuick} library={library} wishlist={wishlist} follows={follows} messages={messages}/>;
   }
   // Admin gate — hit /admin/whoami once. Returns { role: 'admin'|'owner'|null }.
   // When null (403/not an admin), the Admin nav item is hidden entirely. The
@@ -922,6 +939,14 @@ function Topbar({ state, onQuick, onNotif, setView, onSettings, library, reviews
   // stays untouched for non-zodiac themes.
   if (T.zodiac && window.ZodiacTopbar) {
     return <window.ZodiacTopbar state={state} onQuick={onQuick} onNotif={onNotif} setView={setView} onSettings={onSettings} library={library} reviews={reviews} follows={follows}/>;
+  }
+  // Cartographer (vintage) gate — paper topbar with wax-red Selar button.
+  if (T.cartographer && window.CartographerTopbar) {
+    return <window.CartographerTopbar state={state} onQuick={onQuick} onNotif={onNotif} setView={setView} onSettings={onSettings} library={library} reviews={reviews} follows={follows}/>;
+  }
+  // Cartographer Modern gate — dark glass topbar.
+  if (T.cartographerModern && window.CartographerModernTopbar) {
+    return <window.CartographerModernTopbar state={state} onQuick={onQuick} onNotif={onNotif} setView={setView} onSettings={onSettings} library={library} reviews={reviews} follows={follows}/>;
   }
   // Subscribe to auth changes so sign-in / sign-out re-render the topbar.
   // Before: authedUser was read once per render and signOut() mutated a

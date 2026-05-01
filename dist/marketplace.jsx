@@ -2343,6 +2343,12 @@ function ListingDetailView({ state, setView, onQuick, focusId, library, purchase
   if (T.zodiac && window.ZodiacListingDetailView) {
     return <window.ZodiacListingDetailView state={state} setView={setView} onQuick={onQuick} focusId={focusId} library={library} purchaseListing={purchaseListing} reviews={reviews} wishlist={wishlist} follows={follows} recent={recent} messages={messages} coupons={coupons} reports={reports} blocks={blocks}/>;
   }
+  if (T.cartographer && window.CartographerListingDetailView) {
+    return <window.CartographerListingDetailView state={state} setView={setView} onQuick={onQuick} focusId={focusId} library={library} purchaseListing={purchaseListing} reviews={reviews} wishlist={wishlist} follows={follows} recent={recent} messages={messages} coupons={coupons} reports={reports} blocks={blocks}/>;
+  }
+  if (T.cartographerModern && window.CartographerModernListingDetailView) {
+    return <window.CartographerModernListingDetailView state={state} setView={setView} onQuick={onQuick} focusId={focusId} library={library} purchaseListing={purchaseListing} reviews={reviews} wishlist={wishlist} follows={follows} recent={recent} messages={messages} coupons={coupons} reports={reports} blocks={blocks}/>;
+  }
   const l = (window.LISTINGS || []).find((x) => x.id === focusId);
   // First-party Hugin listings (any tier sharing kassa_product_id='gleipnir')
   // have a dedicated, richer page. Always redirect to ZephyroView so the
@@ -2850,6 +2856,12 @@ function ListingDetailView({ state, setView, onQuick, focusId, library, purchase
 function StoreView({ state, onQuick, focusId }) {
   if (T.zodiac && window.ZodiacStoreView) {
     return <window.ZodiacStoreView state={state} onQuick={onQuick} focusId={focusId}/>;
+  }
+  if (T.cartographer && window.CartographerStoreView) {
+    return <window.CartographerStoreView state={state} onQuick={onQuick} focusId={focusId}/>;
+  }
+  if (T.cartographerModern && window.CartographerModernStoreView) {
+    return <window.CartographerModernStoreView state={state} onQuick={onQuick} focusId={focusId}/>;
   }
   const [cat, setCat] = React.useState('All');
   // When search navigated us here with a focusId, snap the category filter

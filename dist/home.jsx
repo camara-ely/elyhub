@@ -100,6 +100,14 @@ function HomeView({ state, setState, setView, onQuick }) {
   if (T.zodiac && window.ZodiacHomeView) {
     return <window.ZodiacHomeView state={state} setState={setState} setView={setView} onQuick={onQuick}/>;
   }
+  // Cartographer (vintage map) gate — delegates to dist/cartographer/views.jsx.
+  if (T.cartographer && window.CartographerHomeView) {
+    return <window.CartographerHomeView state={state} setState={setState} setView={setView} onQuick={onQuick}/>;
+  }
+  // Cartographer Modern (topographic dashboard) gate.
+  if (T.cartographerModern && window.CartographerModernHomeView) {
+    return <window.CartographerModernHomeView state={state} setState={setState} setView={setView} onQuick={onQuick}/>;
+  }
   // Daily claim state is per-kind: 'tag' or 'booster'. Tracks in-flight
   // request + any error message returned by the bot worker (e.g. the user
   // stopped boosting, removed the tag, or Turso was unreachable).
@@ -875,6 +883,14 @@ function LeaderboardView({ state, focusId, onQuick }) {
   if (T.zodiac && window.ZodiacLeaderboardView) {
     return <window.ZodiacLeaderboardView state={state} focusId={focusId} onQuick={onQuick}/>;
   }
+  // Cartographer (vintage map) gate — "Tábua dos Navegantes" full page.
+  if (T.cartographer && window.CartographerLeaderboardView) {
+    return <window.CartographerLeaderboardView state={state} focusId={focusId} onQuick={onQuick}/>;
+  }
+  // Cartographer Modern gate — telemetry dashboard.
+  if (T.cartographerModern && window.CartographerModernLeaderboardView) {
+    return <window.CartographerModernLeaderboardView state={state} focusId={focusId} onQuick={onQuick}/>;
+  }
   useFocusHighlight(focusId);
 
   // category: overall | gym | daily | weekly | monthly
@@ -1066,6 +1082,14 @@ function TrophiesView({ focusId }) {
   // Zodiac gate — delegates to the celestial variant. Original below untouched.
   if (T.zodiac && window.ZodiacTrophiesView) {
     return <window.ZodiacTrophiesView focusId={focusId}/>;
+  }
+  // Cartographer (vintage map) gate — "Galeria de Honrarias" cartouches.
+  if (T.cartographer && window.CartographerTrophiesView) {
+    return <window.CartographerTrophiesView focusId={focusId}/>;
+  }
+  // Cartographer Modern gate — telemetry awards.
+  if (T.cartographerModern && window.CartographerModernTrophiesView) {
+    return <window.CartographerModernTrophiesView focusId={focusId}/>;
   }
   useFocusHighlight(focusId);
   // Re-read ME on every render. The App-level __subscribeLive hook force-updates

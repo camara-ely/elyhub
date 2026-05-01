@@ -2604,6 +2604,12 @@ function ZodiacThemeTransition() {
       const dir = e.detail?.direction;
       if (dir !== 'in' && dir !== 'out') return;
       if (e.detail?.preview) return;
+      // Only one curtain plays per transition — the dispatcher picks a
+      // `winner` (destination if premium, else source). When two premium
+      // themes cross (zodiac → cartographer etc.), this prevents both
+      // curtains from overlaying each other.
+      const winner = e.detail?.winner;
+      if (winner != null && winner !== 'zodiac') return;
       // Smooth ceremony — opacity fades in (700ms), holds at full opacity
       // for ~700ms while the mandala plays, then fades out (700ms).
       // The token mutation + transient state flip happen at ~800ms, when
